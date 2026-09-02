@@ -12,7 +12,19 @@ def resolve_mutable_ref(client: GitHubClient, uses: UsesRef) -> ResolvedRef:
     is_mutable = uses.ref_type in ("mutable_ref", "tag", "branch")
     
     if uses.ref_type == "sha":
-        return ResolvedRef(uses=uses, current_sha=uses.ref, is_mutable=False)
+        is_orphan = False
+        if uses.owner and uses.repo:
+            try:
+                # Compare default branch (HEAD) against the SHA.
+                # If the status is 'diverged' or 'ahead', the commit is NOT in the
+                # history of the default branch (it's either a side branch or an orphan).
+                data = client._get(f"/repos/{uses.owner}/{uses.repo}/compare/HEAD...{uses.ref}")
+                if data.get("status") in ["diverged", "ahead"]:
+                    is_orphan = True
+            except Exception:
+                pass # e.g. 404 if commit doesn't exist or HEAD is invalid
+
+        return ResolvedRef(uses=uses, current_sha=uses.ref, is_mutable=False, is_orphan=is_orphan)
         
     if not is_mutable or not uses.owner or not uses.repo or not uses.ref:
         return ResolvedRef(uses=uses, current_sha=None, is_mutable=is_mutable)

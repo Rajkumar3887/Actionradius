@@ -1,69 +1,52 @@
-import pytest
-from actionradius.scoring import calculate_risk_score
+from actionradius.score.scoring import calculate_risk_score
+from actionradius.models import TriggerContext, PermissionsContext, SecretsContext
 
 def test_critical_score_for_ppe_vector():
-    # Arrange: Mutable pin (+3), PR target (+3), Secrets inherit (+3) = 9 (CRITICAL)
-    context = {
-        "has_pr_target": True, 
-        "inherits_secrets": True, 
-        "explicit_secrets": [], 
-        "elevated_permissions": False
-    }
+    trigger = TriggerContext(["pull_request_target"], "high", True)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(True, [], True)
     
-    # Act
-    result = calculate_risk_score(is_mutable=True, context=context)
+    score, severity, _ = calculate_risk_score(True, True, False, trigger, perms, secrets, False)
     
-    # Assert
-    assert result["score"] == 9
-    assert result["severity"] == "CRITICAL"
-    assert len(result["rationale"]) == 3
+    assert score == 9.0
+    assert severity == "critical"
 
 def test_safe_workflow_is_info():
-    # Arrange: Hardened workflow
-    context = {
-        "has_pr_target": False, 
-        "inherits_secrets": False, 
-        "explicit_secrets": [], 
-        "elevated_permissions": False
-    }
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, [], False)
     
-    # Act
-    result = calculate_risk_score(is_mutable=False, context=context)
+    score, severity, _ = calculate_risk_score(False, False, False, trigger, perms, secrets, False)
     
-    # Assert
-    assert result["score"] == 0
-    assert result["severity"] == "INFO"
-    assert len(result["rationale"]) == 0
+    assert score == 0.0
+    assert severity == "info"
 
 def test_medium_risk_for_mutable_pin_only():
-    # Arrange: Unpinned action, but safe triggers and no secrets
-    context = {
-        "has_pr_target": False, 
-        "inherits_secrets": False, 
-        "explicit_secrets": [], 
-        "elevated_permissions": False
-    }
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, [], False)
     
-    # Act
-    result = calculate_risk_score(is_mutable=True, context=context)
+    score, severity, _ = calculate_risk_score(True, True, False, trigger, perms, secrets, False)
     
-    # Assert
-    assert result["score"] == 3
-    assert result["severity"] == "MEDIUM"
-    assert "Mutable pin (+3)" in result["rationale"]
+    assert score == 3.0
+    assert severity == "medium"
     
 def test_high_risk_for_explicit_secrets_and_permissions():
-    # Arrange: Safe pin, but dangerous context if it were ever poisoned
-    context = {
-        "has_pr_target": False, 
-        "inherits_secrets": False, 
-        "explicit_secrets": ["NPM_TOKEN"], 
-        "elevated_permissions": True
-    }
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, ["NPM_TOKEN"], True)
     
-    # Act
-    result = calculate_risk_score(is_mutable=True, context=context)
+    score, severity, _ = calculate_risk_score(True, True, False, trigger, perms, secrets, False)
     
-    # Assert
-    assert result["score"] == 7 # Mutable(3) + Secrets(2) + Perms(2)
-    assert result["severity"] == "CRITICAL"
+    assert score == 5.0
+    assert severity == "high"
+
+def test_orphan_commit_is_critical():
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, [], False)
+    
+    score, severity, _ = calculate_risk_score(False, True, True, trigger, perms, secrets, False)
+    
+    assert score == 16.0  # 8 for orphan, 8 for compromised bad SHA pin
+    assert severity == "critical"

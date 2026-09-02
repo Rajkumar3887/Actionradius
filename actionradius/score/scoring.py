@@ -1,9 +1,10 @@
 from actionradius.models import Finding
 
-def calculate_risk_score(is_mutable: bool, is_compromised: bool, trigger, permissions, secrets, runs_on_self_hosted: bool) -> tuple[float, str, str]:
+def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool, trigger, permissions, secrets, runs_on_self_hosted: bool) -> tuple[float, str, str]:
     """
     Returns (score, severity, rationale).
     Heuristic:
+    - orphan commit SHA: +8 (critical immediately)
     - mutable pin AND compromised: +3 (if SHA pin is bad, skip to critical)
     - trigger fork_reachable: +3
     - privileged triggers: +1
@@ -14,6 +15,10 @@ def calculate_risk_score(is_mutable: bool, is_compromised: bool, trigger, permis
     score = 0.0
     rationale = []
     
+    if is_orphan:
+        score += 8.0
+        rationale.append("Orphan commit SHA detected (not on default branch) (+8)")
+        
     if not is_mutable and is_compromised:
         score += 8.0 # Skip straight to critical for bad SHA pins
         rationale.append("Directly pinned to compromised SHA (+8)")

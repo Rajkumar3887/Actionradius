@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 from typing import Optional, Literal
 
@@ -54,12 +55,14 @@ class WorkflowFile:
     secrets: SecretsContext
     runs_on_self_hosted: bool
     uses_sites: list[UsesSite]
+    run_scripts: list[str] = dataclasses.field(default_factory=list)
 
 @dataclass
 class ResolvedRef:
     uses: UsesRef
     current_sha: Optional[str]                   # what it resolves to *right now*
     is_mutable: bool
+    is_orphan: bool = False
 
 @dataclass
 class Finding:
