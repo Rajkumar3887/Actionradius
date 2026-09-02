@@ -20,11 +20,20 @@ class GitHubClient:
         self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
         self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", 0))
 
-        if response.status_code == 403 and self.rate_limit_remaining == 0:
-            raise RuntimeError(
-                f"GitHub rate limit hit. Resets at unix time {self.rate_limit_reset}. "
-                f"Pass a token to GitHubClient(token=...) to get a much higher limit."
-            )
+        if response.status_code == 403:
+            import time
+            retry_after = response.headers.get("Retry-After")
+            if retry_after:
+                print(f"  WARNING: Secondary rate limit hit. Sleeping {retry_after}s...")
+                time.sleep(int(retry_after) + 1)
+                return self._get(path, params)
+                
+            if self.rate_limit_remaining == 0:
+                reset_time = int(response.headers.get("X-RateLimit-Reset", time.time() + 60))
+                sleep_sec = max(reset_time - int(time.time()), 1)
+                print(f"  WARNING: Primary rate limit hit. Sleeping {sleep_sec}s until {reset_time}...")
+                time.sleep(sleep_sec)
+                return self._get(path, params)
         if response.status_code == 404:
             raise ValueError(f"Not found: {url} (repo/path doesn't exist or is private)")
         response.raise_for_status()
