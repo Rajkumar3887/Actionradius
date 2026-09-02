@@ -1,6 +1,9 @@
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Literal
+
+# Tri-state compromise classification
+CompromiseStatus = Literal["COMPROMISED", "SAFE", "UNKNOWN"]
 
 @dataclass
 class RepoRef:
@@ -69,10 +72,17 @@ class Finding:
     repo: RepoRef
     uses_site: UsesSite
     resolved: ResolvedRef
-    is_compromised_version: bool
+    compromise_status: CompromiseStatus           # COMPROMISED / SAFE / UNKNOWN
+    historical_exposure: CompromiseStatus          # COMPROMISED if provably was exposed, else UNKNOWN
+    pin_type: str                                  # "sha", "tag", "branch", "local", "unresolvable", "mutable_ref"
     trigger: TriggerContext
     permissions: PermissionsContext
     secrets: SecretsContext
     severity: Literal["critical", "high", "medium", "low", "info"]
     score: float
     rationale: str                     # human-readable "why this severity"
+
+    @property
+    def is_compromised_version(self) -> bool:
+        """Backward-compatible property for existing reports and tests."""
+        return self.compromise_status == "COMPROMISED"

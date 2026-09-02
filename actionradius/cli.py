@@ -10,7 +10,7 @@ from actionradius.inventory.tree_fetcher import fetch_workflow_contents
 from actionradius.parser.workflow_parser import parse_workflow_yaml
 from actionradius.parser.composite_resolver import resolve_reusable_workflows
 from actionradius.resolve.ref_resolver import resolve_mutable_ref
-from actionradius.match.matcher import is_match, is_compromised, is_in_bad_range
+from actionradius.match.matcher import is_match, determine_compromise_status
 from actionradius.score.scoring import calculate_risk_score
 from actionradius.models import Finding
 from actionradius.report.json_report import generate_json_report
@@ -78,19 +78,17 @@ def _scan_workflows(
                         if is_match(site, target):
                             resolved = resolve_mutable_ref(client, site.uses)
 
-                            # Determine compromise status
-                            if bad_range:
-                                compromised = is_in_bad_range(
-                                    client, resolved,
-                                    bad_range["introduced"],
-                                    bad_range["fixed"],
-                                )
-                            else:
-                                compromised = is_compromised(resolved, safe_refs)
+                            # Determine compromise status using unified function
+                            compromise_status = determine_compromise_status(
+                                client=client,
+                                resolved=resolved,
+                                safe_refs=safe_refs,
+                                bad_range=bad_range,
+                            )
 
                             score, severity, rationale = calculate_risk_score(
                                 is_mutable=resolved.is_mutable,
-                                is_compromised=compromised,
+                                compromise_status=compromise_status,
                                 is_orphan=resolved.is_orphan,
                                 trigger=wf.triggers,
                                 permissions=wf.permissions,
@@ -102,7 +100,9 @@ def _scan_workflows(
                                 repo=r,
                                 uses_site=site,
                                 resolved=resolved,
-                                is_compromised_version=compromised,
+                                compromise_status=compromise_status,
+                                historical_exposure="UNKNOWN",
+                                pin_type=site.uses.ref_type,
                                 trigger=wf.triggers,
                                 permissions=wf.permissions,
                                 secrets=wf.secrets,
@@ -121,8 +121,8 @@ def scan(
     org: Optional[str] = typer.Option(None, "--org", help="Organization to scan"),
     repo: Optional[str] = typer.Option(None, "--repo", help="Single repo to scan (format: owner/name)"),
     safe_refs: list[str] = typer.Option([], "--safe-ref", help="Safe SHAs/tags (can pass multiple)"),
-    compromised_after: Optional[str] = typer.Option(None, "--compromised-after", help="Bad range start SHA (commits at or after this are compromised)"),
-    compromised_before: Optional[str] = typer.Option(None, "--compromised-before", help="Bad range end SHA (commits at or before this are compromised, i.e. the fix commit)"),
+    bad_from: Optional[str] = typer.Option(None, "--bad-from", help="Start of compromised commit range (inclusive)"),
+    bad_to: Optional[str] = typer.Option(None, "--bad-to", help="End of compromised commit range (the fix commit)"),
     target_feed: Optional[str] = typer.Option(None, "--target-feed", help="Path to a compromised-actions JSON feed file"),
     json_out: Optional[str] = typer.Option(None, "--json", help="Path to write JSON report"),
     html_out: Optional[str] = typer.Option(None, "--html", help="Path to write HTML report"),
@@ -134,12 +134,23 @@ def scan(
     config = get_config()
     client = GitHubClient(token=config.github_token)
 
+    # --- Argument validation ---
     if not target and not ioc_search and not target_feed:
         typer.secho("Error: Must provide --target, --target-feed, or --ioc-search", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     if not org and not repo:
         typer.secho("Error: Must provide --org or --repo", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    # --safe-ref and --bad-from/--bad-to are mutually exclusive
+    if safe_refs and (bad_from or bad_to):
+        typer.secho("Error: --safe-ref and --bad-from/--bad-to are mutually exclusive. Use one matching mode.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+
+    # --bad-from and --bad-to must both be provided
+    if (bad_from and not bad_to) or (bad_to and not bad_from):
+        typer.secho("Error: --bad-from and --bad-to must both be provided to define a compromised range.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     repos = []
@@ -160,7 +171,7 @@ def scan(
 
         for entry in feed:
             action = entry["action"]
-            bad_range = entry.get("bad_range")
+            feed_bad_range = entry.get("bad_range")
             cve = entry.get("cve", "N/A")
             typer.secho(f"\n--- Scanning for {action} ({cve}) ---", fg=typer.colors.MAGENTA, err=True)
 
@@ -169,7 +180,7 @@ def scan(
                 repos=repos,
                 target=action,
                 safe_refs=[],
-                bad_range=bad_range,
+                bad_range=feed_bad_range,
                 ioc_search=None,
                 findings=findings,
                 ioc_matches=ioc_matches,
@@ -178,8 +189,8 @@ def scan(
     # --- Single-target mode ---
     else:
         bad_range = None
-        if compromised_after and compromised_before:
-            bad_range = {"introduced": compromised_after, "fixed": compromised_before}
+        if bad_from and bad_to:
+            bad_range = {"introduced": bad_from, "fixed": bad_to}
 
         _scan_workflows(
             client=client,
@@ -220,7 +231,8 @@ def scan(
 
     if not json_out and not html_out and not sarif_out and not graph_out:
         for f in findings:
-            typer.secho(f"[{f.severity.upper()}] {f.repo.owner}/{f.repo.name}:{f.uses_site.workflow_path} -> {f.uses_site.uses.raw}", err=True)
+            status_label = f.compromise_status
+            typer.secho(f"[{f.severity.upper()}] [{status_label}] {f.repo.owner}/{f.repo.name}:{f.uses_site.workflow_path} -> {f.uses_site.uses.raw}", err=True)
 
 
 if __name__ == "__main__":

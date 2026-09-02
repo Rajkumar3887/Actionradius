@@ -1,12 +1,13 @@
 import yaml
 from pathlib import Path
-from actionradius.models import Finding
+from actionradius.models import Finding, CompromiseStatus
 
 # --- Load configurable weights ---
 _DEFAULT_WEIGHTS = {
     "orphan_commit": 8.0,
     "compromised_sha_pin": 8.0,
     "mutable_compromised": 3.0,
+    "unknown_compromise": 4.0,
     "fork_reachable_trigger": 3.0,
     "privileged_trigger": 1.0,
     "secrets_inherit": 3.0,
@@ -42,7 +43,16 @@ def load_weights(path: str | None = None):
 load_weights()
 
 
-def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool, trigger, permissions, secrets, runs_on_self_hosted: bool, is_typosquat: bool = False) -> tuple[float, str, str]:
+def calculate_risk_score(
+    is_mutable: bool,
+    compromise_status: CompromiseStatus,
+    is_orphan: bool,
+    trigger,
+    permissions,
+    secrets,
+    runs_on_self_hosted: bool,
+    is_typosquat: bool = False,
+) -> tuple[float, str, str]:
     """
     Returns (score, severity, rationale).
     All weights are loaded from data/weights.yaml and can be overridden.
@@ -56,12 +66,16 @@ def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool
         score += w["orphan_commit"]
         rationale.append(f"Orphan commit SHA detected (not on default branch) (+{w['orphan_commit']})")
 
-    if not is_mutable and is_compromised:
-        score += w["compromised_sha_pin"]
-        rationale.append(f"Directly pinned to compromised SHA (+{w['compromised_sha_pin']})")
-    elif is_mutable and is_compromised:
-        score += w["mutable_compromised"]
-        rationale.append(f"Mutable pin exposed to compromised commit (+{w['mutable_compromised']})")
+    if compromise_status == "COMPROMISED":
+        if not is_mutable:
+            score += w["compromised_sha_pin"]
+            rationale.append(f"Directly pinned to compromised SHA (+{w['compromised_sha_pin']})")
+        else:
+            score += w["mutable_compromised"]
+            rationale.append(f"Mutable pin exposed to compromised commit (+{w['mutable_compromised']})")
+    elif compromise_status == "UNKNOWN":
+        score += w["unknown_compromise"]
+        rationale.append(f"Compromise status unknown — cannot confirm safe (+{w['unknown_compromise']})")
 
     if trigger.fork_reachable:
         score += w["fork_reachable_trigger"]
