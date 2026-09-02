@@ -8,8 +8,16 @@ def get_org_repos(client: GitHubClient, org: str, include_forks: bool = False, i
     """
     repos_data = []
     page = 1
+    endpoint = f"/orgs/{org}/repos"
+    
+    # Try org first, fallback to user if 404
+    try:
+        client._get(endpoint, params={"per_page": 1})
+    except ValueError:
+        endpoint = f"/users/{org}/repos"
+
     while True:
-        batch = client._get(f"/orgs/{org}/repos", params={"per_page": 100, "page": page, "type": "all"})
+        batch = client._get(endpoint, params={"per_page": 100, "page": page})
         repos_data.extend(batch)
         if len(batch) < 100:
             break

@@ -1,4 +1,15 @@
+# Environments
 .env
 venv/
+env/
+ENV/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Outputs
+report.html
+*.sarif
+*.json

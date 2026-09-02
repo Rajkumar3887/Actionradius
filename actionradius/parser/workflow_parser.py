@@ -1,3 +1,10 @@
+import yaml
+from actionradius.models import WorkflowFile, UsesSite, RepoRef
+from actionradius.parser.uses_parser import parse_uses
+from actionradius.context.trigger_risk import extract_trigger_risk
+from actionradius.context.permissions import extract_permissions
+from actionradius.context.secrets import extract_secrets
+
 def parse_workflow_yaml(repo: RepoRef, path: str, yaml_text: str) -> WorkflowFile:
     parsed = yaml.safe_load(yaml_text)
     if not isinstance(parsed, dict):
