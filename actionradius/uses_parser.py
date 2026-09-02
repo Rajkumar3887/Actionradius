@@ -82,9 +82,18 @@ def parse_uses(raw: str) -> UsesRef:
     location, ref = raw.rsplit("@", 1)
 
     # --- Case 2: dynamic expression as the ref, e.g. @${{ inputs.x }} ---
+    # We can't resolve the VERSION, but we CAN still tell which ACTION
+    # is referenced — and that matters for the matcher ("who uses
+    # trivy-action?" should find these even if we can't tell which version).
     if "${{" in ref:
+        parts = location.split("/")
+        if len(parts) >= 2:
+            d_owner, d_repo = parts[0], parts[1]
+            d_path = "/".join(parts[2:]) if len(parts) > 2 else None
+        else:
+            d_owner, d_repo, d_path = None, None, location
         return UsesRef(
-            raw=raw, owner=None, repo=None, path=location, ref=ref,
+            raw=raw, owner=d_owner, repo=d_repo, path=d_path, ref=ref,
             ref_type="unresolvable", is_full_sha=False, is_reusable_workflow=False,
         )
 
