@@ -30,6 +30,7 @@ from actionradius.report import (
     generate_json_general, generate_json_targeted,
     generate_html_general, generate_html_targeted,
 )
+from actionradius.incidents import get_incident, list_incidents, format_incident_list
 
 
 def scan_repo(client, owner, repo):
@@ -244,6 +245,8 @@ def parse_args(argv):
         "safe_refs": set(),  # e.g. {"57a97c7", "3fb12ec"}
         "json": False,      # --json: output JSON to stdout
         "html": None,       # --html <file>: write HTML report
+        "incident": None,   # --incident <id>: use curated incident data
+        "list_incidents": False,  # --list-incidents: show available incidents
     }
 
     positional = []
@@ -274,6 +277,14 @@ def parse_args(argv):
                 return None
             args["html"] = argv[i + 1]
             i += 2
+        elif argv[i] == "--incident":
+            if i + 1 >= len(argv):
+                return None
+            args["incident"] = argv[i + 1]
+            i += 2
+        elif argv[i] == "--list-incidents":
+            args["list_incidents"] = True
+            i += 1
         else:
             positional.append(argv[i])
             i += 1
@@ -305,6 +316,10 @@ def print_usage():
     print("  python scan.py --org <org> --target <action>               # org-wide targeted scan")
     print("  python scan.py --org <org> --target <action> --safe-refs <sha1,sha2,...>")
     print("")
+    print("  Known incidents (curated database):")
+    print("  python scan.py --list-incidents                            # show available incidents")
+    print("  python scan.py --org <org> --incident trivy-2026           # scan using incident data")
+    print("")
     print("  Output formats:")
     print("  python scan.py ... --json                                  # JSON to stdout")
     print("  python scan.py ... --html report.html                      # HTML report file")
@@ -313,12 +328,19 @@ def print_usage():
     print("  python scan.py aquasecurity trivy-action")
     print("  python scan.py --org my-company --target aquasecurity/trivy-action")
     print("  python scan.py --org my-company --target aquasecurity/trivy-action --safe-refs 57a97c7")
+    print("  python scan.py --org my-company --incident trivy-2026")
+    print("  python scan.py --org my-company --incident trivy-2026 --html triage.html")
     print("  python scan.py --org my-company --json > results.json")
-    print("  python scan.py --org my-company --target aquasecurity/trivy-action --html triage.html")
 
 
 def main():
     load_dotenv()
+
+    # Handle --list-incidents before we even need a token
+    if "--list-incidents" in sys.argv:
+        print(format_incident_list())
+        sys.exit(0)
+
     client = GitHubClient(os.getenv("GITHUB_TOKEN"))
 
     args = parse_args(sys.argv)
@@ -326,13 +348,49 @@ def main():
         print_usage()
         sys.exit(1)
 
-    if args["mode"] == "org":
-        scan_org(client, args["org"], target=args["target"], safe_refs=args["safe_refs"] or None,
-                 output_json=args["json"], html_file=args["html"])
-    elif args["mode"] == "single":
-        scan_single(client, args["owner"], args["repo"], target=args["target"],
-                    safe_refs=args["safe_refs"] or None,
-                    output_json=args["json"], html_file=args["html"])
+    # --incident expands to --target + --safe-refs for each target in the
+    # incident. Some incidents affect multiple actions (e.g. trivy-2026
+    # affected both trivy-action AND setup-trivy), so we loop over all
+    # targets and combine results.
+    if args["incident"]:
+        incident = get_incident(args["incident"])
+        if incident is None:
+            print(f"ERROR: Unknown incident '{args['incident']}'\n", file=sys.stderr)
+            print(format_incident_list(), file=sys.stderr)
+            sys.exit(1)
+
+        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"INCIDENT: {incident.name}", file=sys.stderr)
+        print(f"Date: {incident.date} | CVE: {incident.cve or 'N/A'}", file=sys.stderr)
+        print(f"\n{incident.description}", file=sys.stderr)
+        print(f"{'='*60}\n", file=sys.stderr)
+
+        # Run a targeted scan for each affected action in the incident
+        for target_info in incident.targets:
+            target = f"{target_info['owner']}/{target_info['repo']}"
+            safe_refs = target_info.get("safe_refs", set())
+
+            # Merge any user-provided --safe-refs with incident's safe refs
+            if args["safe_refs"]:
+                safe_refs = safe_refs | args["safe_refs"]
+
+            print(f"--- Scanning for {target} (safe refs: {', '.join(safe_refs) or 'none'}) ---\n", file=sys.stderr)
+
+            if args["mode"] == "org":
+                scan_org(client, args["org"], target=target, safe_refs=safe_refs,
+                         output_json=args["json"], html_file=args["html"])
+            elif args["mode"] == "single":
+                scan_single(client, args["owner"], args["repo"], target=target,
+                            safe_refs=safe_refs,
+                            output_json=args["json"], html_file=args["html"])
+    else:
+        if args["mode"] == "org":
+            scan_org(client, args["org"], target=args["target"], safe_refs=args["safe_refs"] or None,
+                     output_json=args["json"], html_file=args["html"])
+        elif args["mode"] == "single":
+            scan_single(client, args["owner"], args["repo"], target=args["target"],
+                        safe_refs=args["safe_refs"] or None,
+                        output_json=args["json"], html_file=args["html"])
 
     print(f"\nRequests remaining this hour: {client.rate_limit_remaining}", file=sys.stderr)
 
