@@ -18,19 +18,7 @@ Nobody's tooling answered that question in an hour. ActionRadius does.
 
 ## How It Works
 
-```mermaid
-graph TD
-    A[CLI] --> B[Inventory Engine]
-    B -->|"GET /orgs/X/repos"| C[GitHub API]
-    B -->|"GET /trees/main?recursive=1"| C
-    B --> D[AST Parser]
-    D -->|"Extracts uses:, env:, secrets:, on:"| E[Context Modeler]
-    E --> F[Ref Resolver]
-    F -->|"GET /git/ref/tags/v1"| C
-    F -->|"GET /compare/HEAD...SHA"| C
-    F --> G[Scoring Engine]
-    G --> H[Reports: JSON / HTML / SARIF / Graphviz]
-```
+![ActionRadius Architecture](docs/architecture.png)
 
 ActionRadius connects directly to the GitHub API, inventories your entire organization's workflow files in seconds via the Git Trees API, resolves every mutable tag to its live SHA, evaluates the contextual risk (secrets, permissions, triggers), and outputs a ranked incident-response report with tri-state compromise classification: **COMPROMISED**, **SAFE**, or **UNKNOWN**.
 
@@ -45,6 +33,7 @@ ActionRadius connects directly to the GitHub API, inventories your entire organi
 | **Compromised Range Matching** | `--bad-from` / `--bad-to` checks if a resolved SHA falls inside a known-bad commit window via the Compare API |
 | **Tri-State Classification** | Every finding is `COMPROMISED`, `SAFE`, or `UNKNOWN` — never silently treated as safe |
 | **Orphan Commit Detection** | Flags hidden SHAs not on any branch (the exact technique from the Trivy binary attack) |
+| **Docker Action Support** | Fully parses `uses: docker://` references and correctly scores mutable Docker tags |
 | **SHA/Comment Mismatch** | Detects when `@SHA # v6.0.2` claims a version tag the SHA doesn't actually match |
 | **Context-Aware Scoring** | Evaluates triggers, permissions, secrets, and runner type alongside compromise status |
 | **Curated Incident Feed** | `--target-feed` scans your org against every known-compromised action in one pass |
@@ -108,6 +97,14 @@ actionradius scan \
   --target actions/checkout \
   --safe-ref 8410ad0602e1e429cee44a835ae97775bbe51671
 ```
+
+### Drift Mode (CI/CD Scanning)
+
+```bash
+# "What changed since yesterday's scan?"
+actionradius diff report-monday.json report-tuesday.json
+```
+*Outputs NEW findings, RESOLVED findings, and ESCALATED severities.*
 
 ### IOC Hunting
 

@@ -271,5 +271,14 @@ def scan(
             typer.secho(f"[{f.severity.upper()}] [{status_label}] {f.repo.owner}/{f.repo.name}:{f.uses_site.workflow_path} -> {f.uses_site.uses.raw}", err=True)
 
 
+@app.command()
+def diff(
+    base_report: str = typer.Argument(..., help="Path to the base (older) JSON report"),
+    head_report: str = typer.Argument(..., help="Path to the head (newer) JSON report")
+):
+    """Compare two JSON reports to find new, resolved, and escalated findings."""
+    from actionradius.drift import diff_reports
+    diff_reports(base_report, head_report)
+
 if __name__ == "__main__":
     app()

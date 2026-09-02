@@ -9,7 +9,7 @@ def resolve_mutable_ref(client: GitHubClient, uses: UsesRef) -> ResolvedRef:
     Resolves a mutable ref (like 'v1' or 'main') to its current 40-character SHA.
     Checks tags first, then branches. Caches results to save API rate limits.
     """
-    is_mutable = uses.ref_type in ("mutable_ref", "tag", "branch")
+    is_mutable = uses.ref_type in ("mutable_ref", "tag", "branch", "docker")
     
     if uses.ref_type == "sha":
         is_orphan = False

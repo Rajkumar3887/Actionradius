@@ -2,7 +2,7 @@ import re
 from typing import Literal
 from actionradius.models import UsesRef
 
-RefType = Literal["sha", "tag", "branch", "local", "unresolvable", "mutable_ref"]
+RefType = Literal["sha", "tag", "branch", "local", "unresolvable", "mutable_ref", "docker", "docker_digest"]
 
 _HEX_SHA_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
 
@@ -13,6 +13,22 @@ def parse_uses(raw: str) -> UsesRef:
         return UsesRef(
             raw=raw, owner=None, repo=None, path=raw, ref=None,
             ref_type="local", is_reusable_workflow=False
+        )
+
+    if raw.startswith("docker://"):
+        image_part = raw[len("docker://"):]
+        ref_type = "docker"
+        ref = "latest"
+        repo = image_part
+        if "@sha256:" in image_part:
+            repo, ref = image_part.split("@", 1)
+            ref_type = "docker_digest"
+        elif ":" in image_part:
+            repo, ref = image_part.split(":", 1)
+
+        return UsesRef(
+            raw=raw, owner="_docker", repo=repo, path=None, ref=ref,
+            ref_type=ref_type, is_reusable_workflow=False
         )
 
     if "@" not in raw:

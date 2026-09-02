@@ -162,6 +162,7 @@ def test_cli_rejects_safe_ref_with_bad_range():
 
     runner = CliRunner()
     result = runner.invoke(app, [
+        "scan",
         "--target", "actions/checkout",
         "--repo", "org/repo",
         "--safe-ref", "abc123",

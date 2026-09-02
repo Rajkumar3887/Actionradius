@@ -1,4 +1,5 @@
 name: My Composite Action
+description: "A composite action that sets up the environment"
 runs:
   using: composite
   steps:

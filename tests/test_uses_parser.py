@@ -48,3 +48,24 @@ def test_dynamic_expression_ref():
 def test_malformed_no_at_sign():
     ref = parse_uses("actions/checkout")
     assert ref.ref_type == "unresolvable"
+
+def test_docker_image_tag():
+    ref = parse_uses("docker://alpine:3.19")
+    assert ref.ref_type == "docker"
+    assert ref.owner == "_docker"
+    assert ref.repo == "alpine"
+    assert ref.ref == "3.19"
+
+def test_docker_image_digest():
+    ref = parse_uses("docker://alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b")
+    assert ref.ref_type == "docker_digest"
+    assert ref.owner == "_docker"
+    assert ref.repo == "alpine"
+    assert ref.ref == "sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b"
+
+def test_docker_image_implicit_latest():
+    ref = parse_uses("docker://ghcr.io/owner/image")
+    assert ref.ref_type == "docker"
+    assert ref.owner == "_docker"
+    assert ref.repo == "ghcr.io/owner/image"
+    assert ref.ref == "latest"
