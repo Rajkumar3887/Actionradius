@@ -2,7 +2,8 @@
 inventory.py
 
 Wires together everything built so far: list workflow files in a repo,
-fetch each one's content, parse them all.
+fetch each one's content, parse them all, then follow reusable workflow
+calls to discover transitive dependencies.
 
 Deliberately split into two layers:
   - is_workflow_path() / parse_workflow_files() — pure logic, no network,
@@ -15,6 +16,7 @@ Deliberately split into two layers:
 
 from actionradius.github_client import GitHubClient
 from actionradius.workflow_parser import ParsedWorkflow, parse_workflow_yaml
+from actionradius.recursion import resolve_reusable_workflows
 
 
 def is_workflow_path(path: str) -> bool:
@@ -45,4 +47,10 @@ def inventory_repo(client: GitHubClient, owner: str, repo: str) -> list[ParsedWo
     workflow_paths = find_workflow_paths(client, owner, repo, default_branch)
 
     files = {path: client.get_file_content(owner, repo, path, ref=default_branch) for path in workflow_paths}
-    return parse_workflow_files(files)
+    workflows = parse_workflow_files(files)
+
+    # Follow reusable workflow calls to find transitive action dependencies.
+    # Depth-capped at 2 levels by default — see recursion.py for details.
+    workflows = resolve_reusable_workflows(client, workflows, max_depth=2)
+
+    return workflows

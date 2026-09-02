@@ -1,0 +1,14 @@
+name: Reusable Deploy
+on:
+  workflow_call:
+    secrets:
+      DEPLOY_TOKEN:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/build-push-action@v5
+      - uses: some-org/deploy-action@a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2

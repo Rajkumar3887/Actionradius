@@ -21,6 +21,12 @@ class UsesSite:
     job_id: str
     step_index: Optional[int]   # None = job-level `uses:` (a reusable workflow call)
     uses: UsesRef
+    # Tracks how we found this site. Empty = directly in the scanned workflow.
+    # Non-empty = found by following reusable workflow calls, e.g.
+    # ["my-org/shared-workflows/.github/workflows/publish.yml@v1"]
+    # means "we found this action inside publish.yml, which was called
+    # by the original workflow." Used to show provenance in reports.
+    source_chain: list[str] = field(default_factory=list)
 
 
 @dataclass

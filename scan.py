@@ -57,6 +57,8 @@ def print_findings(findings, show_repo=False):
     for f in findings:
         prefix = f"{f['owner']}/{f['repo']} " if show_repo else ""
         print(f"[{f['risk']['severity']}] {prefix}{f['file']} (Job: {f['site'].job_id}) -> {f['site'].uses}")
+        if f['site'].source_chain:
+            print(f"  Found via: {' -> '.join(f['site'].source_chain)}")
         print(f"  Resolved SHA: {f['sha']}")
         print(f"  Rationale: {', '.join(f['risk']['rationale'])}\n")
 

@@ -1,0 +1,21 @@
+name: CI with Reusable Deploy
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    needs: test
+    uses: my-org/shared-workflows/.github/workflows/deploy.yml@v2
+    secrets:
+      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+
+  notify:
+    needs: deploy
+    uses: my-org/shared-workflows/.github/workflows/notify.yml@v1
+    secrets: inherit
