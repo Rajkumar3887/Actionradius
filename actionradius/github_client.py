@@ -1,4 +1,4 @@
-"""
+﻿"""
 github_client.py
 
 This is the ONLY file that talks to GitHub directly. Every other part of
@@ -90,6 +90,32 @@ class GitHubClient:
             # miss files without knowing.
             print(f"  WARNING: tree for {owner}/{repo} was truncated by GitHub's API")
         return data.get("tree", [])
+
+    def get_org_repos(self, org: str, include_forks: bool = False, include_archived: bool = False) -> list[dict]:
+        """
+        List every repo in an org — paginated, since GitHub caps each page at
+        100 even if you ask for more. We keep requesting pages until one
+        comes back with fewer than 100 results (the "last page" signal).
+
+        By default we drop forks (they mostly track upstream CI, not your
+        org's own exposure) and archived repos (nothing's running there).
+        Set the flags to True if you want a fuller/noisier picture.
+        """
+        repos: list[dict] = []
+        page = 1
+        while True:
+            batch = self._get(f"/orgs/{org}/repos", params={"per_page": 100, "page": page, "type": "all"})
+            repos.extend(batch)
+            if len(batch) < 100:
+                break  # short page = last page
+            page += 1
+
+        if not include_forks:
+            repos = [r for r in repos if not r.get("fork", False)]
+        if not include_archived:
+            repos = [r for r in repos if not r.get("archived", False)]
+
+        return repos
 
     def get_file_content(self, owner: str, repo: str, path: str, ref: str) -> str:
         """Fetch the raw text content of one file at a specific ref (branch/tag/sha)."""

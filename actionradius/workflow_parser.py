@@ -13,7 +13,7 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
-from uses_parser import parse_uses, UsesRef
+from actionradius.uses_parser import parse_uses, UsesRef
 
 
 @dataclass
@@ -28,6 +28,7 @@ class ParsedWorkflow:
     path: str
     name: Optional[str]
     raw_triggers: Any            # interpreted properly in a later step — for now, captured as-is
+    raw_dict: dict = field(default_factory=dict)  # <-- Added to hold the full workflow context
     uses_sites: list[UsesSite] = field(default_factory=list)
 
 
@@ -70,4 +71,5 @@ def parse_workflow_yaml(path: str, yaml_text: str) -> ParsedWorkflow:
                     uses=parse_uses(step["uses"]),
                 ))
 
-    return ParsedWorkflow(path=path, name=name, raw_triggers=raw_triggers, uses_sites=uses_sites)
+    # We now pass `parsed` directly into `raw_dict`
+    return ParsedWorkflow(path=path, name=name, raw_triggers=raw_triggers, raw_dict=parsed, uses_sites=uses_sites)
