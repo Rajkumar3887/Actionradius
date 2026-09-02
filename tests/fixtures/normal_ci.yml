@@ -1,0 +1,17 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@8410ad0592bd1c1ecd1912536d6bee2b5a4a0e5b
+      - uses: aquasecurity/trivy-action@57a97c7
+      - uses: ./.github/actions/local-build-step
+      - name: Run tests
+        run: npm test
+
+  publish:
+    uses: my-org/shared-workflows/.github/workflows/publish.yml@v1
+    secrets: inherit
