@@ -26,6 +26,10 @@ from actionradius.context import analyze_context
 from actionradius.scoring import calculate_risk_score
 from actionradius.ref_resolver import resolve_mutable_ref
 from actionradius.matcher import match_target, format_match_summary, EXPOSED
+from actionradius.report import (
+    generate_json_general, generate_json_targeted,
+    generate_html_general, generate_html_targeted,
+)
 
 
 def scan_repo(client, owner, repo):
@@ -114,37 +118,55 @@ def print_findings(findings, show_repo=False):
         print(f"  Rationale: {', '.join(f['risk']['rationale'])}\n")
 
 
-def scan_single(client, owner, repo, target=None, safe_refs=None):
+def scan_single(client, owner, repo, target=None, safe_refs=None, output_json=False, html_file=None):
+    scan_label = f"{owner}/{repo}"
     if target:
         t_owner, t_repo = target.split("/", 1)
-        print(f"Scanning {owner}/{repo} for {target}...\n")
+        print(f"Scanning {owner}/{repo} for {target}...\n", file=sys.stderr)
 
         workflows, results = scan_repo_targeted(client, owner, repo, t_owner, t_repo, safe_refs)
 
         total_sites = sum(len(wf.uses_sites) for wf in workflows)
-        print(f"Total uses: sites found: {total_sites}")
-        print(f"Sites referencing {target}: {len(results)}\n")
+        print(f"Total uses: sites found: {total_sites}", file=sys.stderr)
+        print(f"Sites referencing {target}: {len(results)}\n", file=sys.stderr)
 
-        if results:
-            print(format_match_summary(results, target))
+        if output_json:
+            print(generate_json_targeted(target, safe_refs, results))
+        elif html_file:
+            html = generate_html_targeted(target, safe_refs, results, scan_label=scan_label)
+            with open(html_file, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"HTML report written to: {html_file}", file=sys.stderr)
         else:
-            print(f"No sites reference {target} in this repo.")
+            if results:
+                print(format_match_summary(results, target))
+            else:
+                print(f"No sites reference {target} in this repo.")
     else:
-        print(f"Scanning {owner}/{repo}...\n")
+        print(f"Scanning {owner}/{repo}...\n", file=sys.stderr)
         total_sites, findings = scan_repo(client, owner, repo)
 
-        print(f"Total uses: sites found: {total_sites}")
-        print(f"Mutable (unpinned) sites: {len(findings)}\n")
+        print(f"Total uses: sites found: {total_sites}", file=sys.stderr)
+        print(f"Mutable (unpinned) sites: {len(findings)}\n", file=sys.stderr)
 
-        if findings:
-            print("--- PRIORITIZED FINDINGS ---\n")
-            print_findings(findings, show_repo=False)
+        if output_json:
+            print(generate_json_general(total_sites, findings))
+        elif html_file:
+            html = generate_html_general(total_sites, findings, scan_label=scan_label)
+            with open(html_file, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"HTML report written to: {html_file}", file=sys.stderr)
+        else:
+            if findings:
+                print("--- PRIORITIZED FINDINGS ---\n")
+                print_findings(findings, show_repo=False)
 
 
-def scan_org(client, org, target=None, safe_refs=None):
-    print(f"Scanning org: {org}...\n")
+def scan_org(client, org, target=None, safe_refs=None, output_json=False, html_file=None):
+    scan_label = f"org:{org}"
+    print(f"Scanning org: {org}...\n", file=sys.stderr)
     repos = client.get_org_repos(org)  # forks/archived excluded by default
-    print(f"Found {len(repos)} repo(s) to scan (forks/archived excluded)\n")
+    print(f"Found {len(repos)} repo(s) to scan (forks/archived excluded)\n", file=sys.stderr)
 
     if target:
         t_owner, t_repo = target.split("/", 1)
@@ -152,41 +174,57 @@ def scan_org(client, org, target=None, safe_refs=None):
 
         for i, repo_info in enumerate(repos, start=1):
             repo_name = repo_info["name"]
-            print(f"[{i}/{len(repos)}] Scanning {org}/{repo_name}...")
+            print(f"[{i}/{len(repos)}] Scanning {org}/{repo_name}...", file=sys.stderr)
             try:
                 _, results = scan_repo_targeted(client, org, repo_name, t_owner, t_repo, safe_refs)
                 all_results.extend(results)
             except Exception as e:
-                print(f"  WARNING: couldn't scan {org}/{repo_name}: {e}")
+                print(f"  WARNING: couldn't scan {org}/{repo_name}: {e}", file=sys.stderr)
                 continue
 
-        print(f"\n{format_match_summary(all_results, target)}")
+        if output_json:
+            print(generate_json_targeted(target, safe_refs, all_results))
+        elif html_file:
+            html = generate_html_targeted(target, safe_refs, all_results, scan_label=scan_label)
+            with open(html_file, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"HTML report written to: {html_file}", file=sys.stderr)
+        else:
+            print(f"\n{format_match_summary(all_results, target)}")
     else:
         total_sites_all = 0
         all_findings = []
 
         for i, repo_info in enumerate(repos, start=1):
             repo_name = repo_info["name"]
-            print(f"[{i}/{len(repos)}] Scanning {org}/{repo_name}...")
+            print(f"[{i}/{len(repos)}] Scanning {org}/{repo_name}...", file=sys.stderr)
             try:
                 total_sites, findings = scan_repo(client, org, repo_name)
             except Exception as e:
                 # One repo failing (empty repo, disabled workflows API, etc.)
                 # shouldn't kill an org-wide scan — flag it and move on.
-                print(f"  WARNING: couldn't scan {org}/{repo_name}: {e}")
+                print(f"  WARNING: couldn't scan {org}/{repo_name}: {e}", file=sys.stderr)
                 continue
 
             total_sites_all += total_sites
             all_findings.extend(findings)
 
-        print(f"\n=== ORG-WIDE SUMMARY: {org} ===")
-        print(f"Repos scanned: {len(repos)}")
-        print(f"Total uses: sites found: {total_sites_all}")
-        print(f"Mutable (unpinned) sites: {len(all_findings)}\n")
+        if output_json:
+            print(generate_json_general(total_sites_all, all_findings))
+        elif html_file:
+            html = generate_html_general(total_sites_all, all_findings, scan_label=scan_label)
+            with open(html_file, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"HTML report written to: {html_file}", file=sys.stderr)
+        else:
+            print(f"\n=== ORG-WIDE SUMMARY: {org} ===")
+            print(f"Repos scanned: {len(repos)}")
+            print(f"Total uses: sites found: {total_sites_all}")
+            print(f"Mutable (unpinned) sites: {len(all_findings)}\n")
 
-        if all_findings:
-            print("--- PRIORITIZED FINDINGS (org-wide) ---\n")
-            print_findings(all_findings, show_repo=True)
+            if all_findings:
+                print("--- PRIORITIZED FINDINGS (org-wide) ---\n")
+                print_findings(all_findings, show_repo=True)
 
 
 def parse_args(argv):
@@ -204,6 +242,8 @@ def parse_args(argv):
         "org": None,
         "target": None,     # e.g. "aquasecurity/trivy-action"
         "safe_refs": set(),  # e.g. {"57a97c7", "3fb12ec"}
+        "json": False,      # --json: output JSON to stdout
+        "html": None,       # --html <file>: write HTML report
     }
 
     positional = []
@@ -225,6 +265,14 @@ def parse_args(argv):
                 return None
             # Comma-separated list of SHAs
             args["safe_refs"] = {s.strip() for s in argv[i + 1].split(",") if s.strip()}
+            i += 2
+        elif argv[i] == "--json":
+            args["json"] = True
+            i += 1
+        elif argv[i] == "--html":
+            if i + 1 >= len(argv):
+                return None
+            args["html"] = argv[i + 1]
             i += 2
         else:
             positional.append(argv[i])
@@ -257,10 +305,16 @@ def print_usage():
     print("  python scan.py --org <org> --target <action>               # org-wide targeted scan")
     print("  python scan.py --org <org> --target <action> --safe-refs <sha1,sha2,...>")
     print("")
+    print("  Output formats:")
+    print("  python scan.py ... --json                                  # JSON to stdout")
+    print("  python scan.py ... --html report.html                      # HTML report file")
+    print("")
     print("Examples:")
     print("  python scan.py aquasecurity trivy-action")
     print("  python scan.py --org my-company --target aquasecurity/trivy-action")
     print("  python scan.py --org my-company --target aquasecurity/trivy-action --safe-refs 57a97c7")
+    print("  python scan.py --org my-company --json > results.json")
+    print("  python scan.py --org my-company --target aquasecurity/trivy-action --html triage.html")
 
 
 def main():
@@ -273,11 +327,14 @@ def main():
         sys.exit(1)
 
     if args["mode"] == "org":
-        scan_org(client, args["org"], target=args["target"], safe_refs=args["safe_refs"] or None)
+        scan_org(client, args["org"], target=args["target"], safe_refs=args["safe_refs"] or None,
+                 output_json=args["json"], html_file=args["html"])
     elif args["mode"] == "single":
-        scan_single(client, args["owner"], args["repo"], target=args["target"], safe_refs=args["safe_refs"] or None)
+        scan_single(client, args["owner"], args["repo"], target=args["target"],
+                    safe_refs=args["safe_refs"] or None,
+                    output_json=args["json"], html_file=args["html"])
 
-    print(f"\nRequests remaining this hour: {client.rate_limit_remaining}")
+    print(f"\nRequests remaining this hour: {client.rate_limit_remaining}", file=sys.stderr)
 
 if __name__ == '__main__':
     main()
