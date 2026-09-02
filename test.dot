@@ -1,0 +1,15 @@
+digraph BlastRadius {
+  rankdir=LR;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica", fontsize=10];
+
+  "actions/checkout" [shape=octagon, style=filled, fillcolor="#d73a49", fontcolor=white, label="actions/checkout\n(Compromised Action)"];
+  "Rajkumar3887/actionradius-testlab" [shape=box, style=filled, fillcolor="#d73a49", fontcolor=white, label="Rajkumar3887/actionradius-testlab\n(CRITICAL)"];
+  "secret_SUPER_SECRET_TOKEN" [shape=ellipse, style=filled, fillcolor="#ffd33d", label="Secret: SUPER_SECRET_TOKEN"];
+  "trigger_pr_target" [shape=diamond, style=filled, fillcolor="#b392f0", label="Fork-Reachable Trigger\n(pull_request_target)"];
+
+  "actions/checkout" -> "Rajkumar3887/actionradius-testlab" [label="8410ad0602e1e429cee44a835ae97775bbe51671", color="#6a737d"];
+  "actions/checkout" -> "Rajkumar3887/actionradius-testlab" [label="v3", color="#6a737d"];
+  "Rajkumar3887/actionradius-testlab" -> "trigger_pr_target" [color="#b392f0"];
+  "Rajkumar3887/actionradius-testlab" -> "secret_SUPER_SECRET_TOKEN" [color="#dbab09"];
+}

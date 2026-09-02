@@ -13,6 +13,8 @@ from actionradius.score.scoring import calculate_risk_score
 from actionradius.models import Finding
 from actionradius.report.json_report import generate_json_report
 from actionradius.report.html_report import generate_html_report
+from actionradius.report.sarif_report import generate_sarif_report
+from actionradius.report.graph_report import generate_graph_report
 
 app = typer.Typer()
 
@@ -25,6 +27,7 @@ def scan(
     json_out: Optional[str] = typer.Option(None, "--json", help="Path to write JSON report"),
     html_out: Optional[str] = typer.Option(None, "--html", help="Path to write HTML report"),
     sarif_out: Optional[str] = typer.Option(None, "--sarif", help="Path to write SARIF report (for GitHub Advanced Security)"),
+    graph_out: Optional[str] = typer.Option(None, "--graph", help="Path to write Graphviz DOT report"),
     ioc_search: Optional[str] = typer.Option(None, "--ioc-search", help="Search string/domain in workflow run scripts")
 ):
     """Scan repositories for exposed GitHub Actions."""
@@ -116,11 +119,14 @@ def scan(
         typer.secho(f"Wrote HTML report to {html_out}", fg=typer.colors.GREEN, err=True)
         
     if sarif_out:
-        from actionradius.report.sarif_report import generate_sarif_report
         generate_sarif_report(findings, sarif_out)
         typer.secho(f"Wrote SARIF report to {sarif_out}", fg=typer.colors.GREEN, err=True)
 
-    if not json_out and not html_out and not sarif_out:
+    if graph_out:
+        generate_graph_report(findings, graph_out, target)
+        typer.secho(f"Wrote Graphviz DOT report to {graph_out}", fg=typer.colors.GREEN, err=True)
+
+    if not json_out and not html_out and not sarif_out and not graph_out:
         for f in findings:
             typer.secho(f"[{f.severity.upper()}] {f.repo.owner}/{f.repo.name}:{f.uses_site.workflow_path} -> {f.uses_site.uses.raw}", err=True)
 
