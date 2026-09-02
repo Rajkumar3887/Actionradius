@@ -1,0 +1,53 @@
+[
+  {
+    "action": "aquasecurity/trivy-action",
+    "bad_range": {
+      "introduced": "ddb9da44",
+      "fixed": "76d05ec629db6c6a67e5a1f8a6cbf069d1e4e1de"
+    },
+    "bad_tags": ["0.34.2"],
+    "cve": "aquasecurity/trivy#10425",
+    "disclosed": "2026-03-19",
+    "attack_window": {
+      "start": "2026-03-19T17:43:00Z",
+      "end": "2026-03-20T05:40:00Z"
+    },
+    "ioc_strings": ["aquasecurtiy.org", "scan.aquasecurtiy.org", "tpcp-docs", "TeamPCP"],
+    "description": "75 of 76 trivy-action version tags force-pushed to malicious commits by TeamPCP via compromised aqua-bot service account. Payload harvested runner process environments, stole secrets from memory via /proc/PID/mem, and exfiltrated via hybrid RSA-4096/AES-256 encryption to typosquatted C2 (scan.aquasecurtiy.org)."
+  },
+  {
+    "action": "aquasecurity/setup-trivy",
+    "bad_range": {
+      "introduced": "ddb9da44",
+      "fixed": "76d05ec629db6c6a67e5a1f8a6cbf069d1e4e1de"
+    },
+    "cve": "aquasecurity/trivy#10425",
+    "disclosed": "2026-03-19",
+    "attack_window": {
+      "start": "2026-03-19T17:43:00Z",
+      "end": "2026-03-20T05:40:00Z"
+    },
+    "description": "7 setup-trivy tags affected in same TeamPCP incident as trivy-action."
+  },
+  {
+    "action": "tj-actions/changed-files",
+    "bad_range": {
+      "introduced": "0e58ed8671d6b60d0890c21b07f8835ace038e67",
+      "fixed": "dcc7a0cba228f4b36cce4979c8a31e5e6dfc8b0a"
+    },
+    "cve": "CVE-2025-30066",
+    "disclosed": "2025-03-15",
+    "ioc_strings": ["b64blob"],
+    "description": "Attackers compromised tj-actions/changed-files to exfiltrate CI/CD secrets via base64-encoded workflow logs."
+  },
+  {
+    "action": "tj-actions/verify-changed-files",
+    "bad_range": {
+      "introduced": "c8c1e0f77b4fdd74e25c26e0db3a0a3afd5cfc97",
+      "fixed": "a1c1e1c8b97b7b01c4f0a3c1e8c1e0f77b4fdd74"
+    },
+    "cve": "CVE-2025-30066",
+    "disclosed": "2025-03-15",
+    "description": "Companion action compromised alongside tj-actions/changed-files in the same supply-chain incident."
+  }
+]

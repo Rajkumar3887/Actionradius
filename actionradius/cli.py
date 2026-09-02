@@ -5,7 +5,7 @@ from typing import Optional
 from pathlib import Path
 from actionradius.config import get_config
 from actionradius.github_client import GitHubClient
-from actionradius.inventory.repo_lister import get_org_repos, get_repo
+from actionradius.inventory.repo_lister import get_org_repos, get_repo, check_exfil_repos
 from actionradius.inventory.tree_fetcher import fetch_workflow_contents
 from actionradius.parser.workflow_parser import parse_workflow_yaml
 from actionradius.parser.composite_resolver import resolve_reusable_workflows
@@ -144,15 +144,16 @@ def scan(
     html_out: Optional[str] = typer.Option(None, "--html", help="Path to write HTML report"),
     sarif_out: Optional[str] = typer.Option(None, "--sarif", help="Path to write SARIF report (for GitHub Advanced Security)"),
     graph_out: Optional[str] = typer.Option(None, "--graph", help="Path to write Graphviz DOT report"),
-    ioc_search: Optional[str] = typer.Option(None, "--ioc-search", help="Search string/domain in workflow run scripts")
+    ioc_search: Optional[str] = typer.Option(None, "--ioc-search", help="Search string/domain in workflow run scripts"),
+    check_exfil: bool = typer.Option(False, "--check-exfil", help="Search org members for tpcp-docs exfiltration repos"),
 ):
     """Scan repositories for exposed GitHub Actions."""
     config = get_config()
     client = GitHubClient(token=config.github_token)
 
     # --- Argument validation ---
-    if not target and not ioc_search and not target_feed:
-        typer.secho("Error: Must provide --target, --target-feed, or --ioc-search", fg=typer.colors.RED, err=True)
+    if not target and not ioc_search and not target_feed and not check_exfil:
+        typer.secho("Error: Must provide --target, --target-feed, --ioc-search, or --check-exfil", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     if not org and not repo:
@@ -168,6 +169,25 @@ def scan(
     if (bad_from and not bad_to) or (bad_to and not bad_from):
         typer.secho("Error: --bad-from and --bad-to must both be provided to define a compromised range.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
+
+    # --- Exfiltration check (tpcp-docs) ---
+    if check_exfil:
+        scan_org = org or (repo.split("/", 1)[0] if repo else None)
+        if not scan_org:
+            typer.secho("Error: --check-exfil requires --org or --repo", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        typer.secho(f"Checking for tpcp-docs exfiltration repos in {scan_org}...", fg=typer.colors.CYAN, err=True)
+        hits = check_exfil_repos(client, scan_org)
+        if hits:
+            typer.secho(f"\n🚨 EXFILTRATION DETECTED: Found tpcp-docs repos on {len(hits)} account(s):", fg=typer.colors.RED, err=True)
+            for h in hits:
+                typer.secho(f"  → https://github.com/{h}/tpcp-docs", fg=typer.colors.RED, err=True)
+            typer.secho("\n  These repos may contain encrypted credential bundles from the TeamPCP/Trivy attack.", fg=typer.colors.RED, err=True)
+            typer.secho("  IMMEDIATE ACTION: Rotate all secrets accessible to CI workflows on these accounts.", fg=typer.colors.RED, err=True)
+        else:
+            typer.secho("✅ No tpcp-docs exfiltration repos found.", fg=typer.colors.GREEN, err=True)
+        if not target and not ioc_search and not target_feed:
+            return  # --check-exfil was the only action requested
 
     repos = []
     if org:

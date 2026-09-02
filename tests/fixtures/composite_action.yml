@@ -1,0 +1,7 @@
+name: My Composite Action
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+    - run: pip install -r requirements.txt
+      shell: bash

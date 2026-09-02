@@ -47,3 +47,30 @@ def get_repo(client: GitHubClient, owner: str, repo: str) -> RepoRef:
         default_branch=r["default_branch"],
         is_private=r.get("private", False)
     )
+
+
+def check_exfil_repos(client: GitHubClient, org: str) -> list[str]:
+    """
+    Search org members for 'tpcp-docs' repos — a sign of successful
+    TeamPCP credential exfiltration from the March 2026 Trivy incident.
+
+    The attack's fallback exfil path creates a public repo named 'tpcp-docs'
+    on the victim's GitHub account and uploads stolen secrets as release assets.
+    """
+    hits = []
+
+    try:
+        members = client._get(f"/orgs/{org}/members", params={"per_page": 100})
+    except Exception:
+        # Fallback: try checking the org itself
+        members = [{"login": org}]
+
+    for m in members:
+        login = m.get("login", "")
+        try:
+            client._get(f"/repos/{login}/tpcp-docs")
+            hits.append(login)
+        except (ValueError, Exception):
+            pass  # 404 = not found, expected for clean accounts
+
+    return hits

@@ -1,0 +1,11 @@
+# All weights configurable — justifications in README scoring table
+orphan_commit: 8.0
+compromised_sha_pin: 8.0
+mutable_compromised: 3.0
+unknown_compromise: 4.0
+fork_reachable_trigger: 3.0
+privileged_trigger: 1.0
+secrets_inherit: 3.0
+explicit_secrets: 2.0
+self_hosted_runner: 2.0
+typosquat_penalty: 5.0
