@@ -17,6 +17,7 @@ from actionradius.report.json_report import generate_json_report
 from actionradius.report.html_report import generate_html_report
 from actionradius.report.sarif_report import generate_sarif_report
 from actionradius.report.graph_report import generate_graph_report
+from actionradius.match.typosquat import check_typosquat
 
 app = typer.Typer()
 
@@ -60,6 +61,17 @@ def _scan_workflows(
                         if ioc_search in script:
                             ioc_matches.append((r.owner, r.name, wf.path, script))
                             typer.secho(f"[IOC MATCH] {r.owner}/{r.name}:{wf.path}", fg=typer.colors.RED, err=True)
+
+                # Typosquat detection — runs on every scan, independent of target
+                for site in wf.uses_sites:
+                    squat = check_typosquat(site)
+                    if squat:
+                        typer.secho(
+                            f"[TYPOSQUAT] {r.owner}/{r.name}:{squat['workflow_path']} "
+                            f"uses '{squat['suspicious_action']}' — looks like '{squat['similar_to']}' "
+                            f"(edit distance: {squat['edit_distance']})",
+                            fg=typer.colors.RED, err=True
+                        )
 
                 if target:
                     for site in wf.uses_sites:

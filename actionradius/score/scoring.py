@@ -1,49 +1,90 @@
+import yaml
+from pathlib import Path
 from actionradius.models import Finding
 
-def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool, trigger, permissions, secrets, runs_on_self_hosted: bool) -> tuple[float, str, str]:
+# --- Load configurable weights ---
+_DEFAULT_WEIGHTS = {
+    "orphan_commit": 8.0,
+    "compromised_sha_pin": 8.0,
+    "mutable_compromised": 3.0,
+    "fork_reachable_trigger": 3.0,
+    "privileged_trigger": 1.0,
+    "secrets_inherit": 3.0,
+    "explicit_secrets": 2.0,
+    "self_hosted_runner": 2.0,
+    "typosquat_penalty": 5.0,
+}
+
+_WEIGHTS = dict(_DEFAULT_WEIGHTS)
+
+def load_weights(path: str | None = None):
+    """Load scoring weights from a YAML file, falling back to defaults."""
+    global _WEIGHTS
+    _WEIGHTS = dict(_DEFAULT_WEIGHTS)
+
+    if path is None:
+        # Try the default location
+        default_path = Path(__file__).parent.parent.parent / "data" / "weights.yaml"
+        if default_path.exists():
+            path = str(default_path)
+        else:
+            return
+
+    with open(path, "r", encoding="utf-8") as f:
+        overrides = yaml.safe_load(f)
+
+    if isinstance(overrides, dict):
+        for k, v in overrides.items():
+            if k in _WEIGHTS and isinstance(v, (int, float)):
+                _WEIGHTS[k] = float(v)
+
+# Auto-load defaults on import
+load_weights()
+
+
+def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool, trigger, permissions, secrets, runs_on_self_hosted: bool, is_typosquat: bool = False) -> tuple[float, str, str]:
     """
     Returns (score, severity, rationale).
-    Heuristic:
-    - orphan commit SHA: +8 (critical immediately)
-    - mutable pin AND compromised: +3 (if SHA pin is bad, skip to critical)
-    - trigger fork_reachable: +3
-    - privileged triggers: +1
-    - real secrets in scope: +2, secrets inherit: +3
-    - self-hosted runner: +2
+    All weights are loaded from data/weights.yaml and can be overridden.
     Map: 0-1 low, 2-4 medium, 5-7 high, 8+ critical.
     """
+    w = _WEIGHTS
     score = 0.0
     rationale = []
-    
+
     if is_orphan:
-        score += 8.0
-        rationale.append("Orphan commit SHA detected (not on default branch) (+8)")
-        
+        score += w["orphan_commit"]
+        rationale.append(f"Orphan commit SHA detected (not on default branch) (+{w['orphan_commit']})")
+
     if not is_mutable and is_compromised:
-        score += 8.0 # Skip straight to critical for bad SHA pins
-        rationale.append("Directly pinned to compromised SHA (+8)")
+        score += w["compromised_sha_pin"]
+        rationale.append(f"Directly pinned to compromised SHA (+{w['compromised_sha_pin']})")
     elif is_mutable and is_compromised:
-        score += 3.0
-        rationale.append("Mutable pin exposed to compromised commit (+3)")
-        
+        score += w["mutable_compromised"]
+        rationale.append(f"Mutable pin exposed to compromised commit (+{w['mutable_compromised']})")
+
     if trigger.fork_reachable:
-        score += 3.0
-        rationale.append("Fork-reachable trigger (+3)")
+        score += w["fork_reachable_trigger"]
+        rationale.append(f"Fork-reachable trigger (+{w['fork_reachable_trigger']})")
     elif trigger.risk == "medium":
-        score += 1.0
-        rationale.append("Privileged trigger (+1)")
-        
+        score += w["privileged_trigger"]
+        rationale.append(f"Privileged trigger (+{w['privileged_trigger']})")
+
     if secrets.inherits_all:
-        score += 3.0
-        rationale.append("Inherited secrets (+3)")
+        score += w["secrets_inherit"]
+        rationale.append(f"Inherited secrets (+{w['secrets_inherit']})")
     elif secrets.has_real_secrets:
-        score += 2.0
-        rationale.append("Explicit secrets in scope (+2)")
-        
+        score += w["explicit_secrets"]
+        rationale.append(f"Explicit secrets in scope (+{w['explicit_secrets']})")
+
     if runs_on_self_hosted:
-        score += 2.0
-        rationale.append("Self-hosted runner (+2)")
-        
+        score += w["self_hosted_runner"]
+        rationale.append(f"Self-hosted runner (+{w['self_hosted_runner']})")
+
+    if is_typosquat:
+        score += w["typosquat_penalty"]
+        rationale.append(f"Suspected typosquat of a popular action (+{w['typosquat_penalty']})")
+
     if score >= 8:
         severity = "critical"
     elif score >= 5:
@@ -54,5 +95,5 @@ def calculate_risk_score(is_mutable: bool, is_compromised: bool, is_orphan: bool
         severity = "low"
     else:
         severity = "info"
-        
+
     return score, severity, ", ".join(rationale)
