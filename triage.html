@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ActionRadius — Incident Triage — aquasecurity/setup-trivy</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --critical: #f85149;
+    --high: #f0883e;
+    --medium: #d29922;
+    --low: #3fb950;
+    --info: #58a6ff;
+    --exposed: #f85149;
+    --unknown: #d29922;
+    --safe: #3fb950;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.25rem;
+    background: linear-gradient(135deg, #58a6ff, #bc8cff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.9rem; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .card .count {
+    font-size: 2rem;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  .card .label { color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card.critical .count { color: var(--critical); }
+  .card.high .count { color: var(--high); }
+  .card.medium .count { color: var(--medium); }
+  .card.low .count { color: var(--low); }
+  .card.info .count { color: var(--info); }
+  .card.exposed .count { color: var(--exposed); }
+  .card.unknown .count { color: var(--unknown); }
+  .card.safe .count { color: var(--safe); }
+  .card.total .count { color: var(--text); }
+  .section-title {
+    font-size: 1.2rem;
+    margin: 2rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid var(--border);
+  }
+  .finding.critical { border-left-color: var(--critical); }
+  .finding.high { border-left-color: var(--high); }
+  .finding.medium { border-left-color: var(--medium); }
+  .finding.low { border-left-color: var(--low); }
+  .finding.exposed { border-left-color: var(--exposed); }
+  .finding.pinned_unknown { border-left-color: var(--unknown); }
+  .finding.safe { border-left-color: var(--safe); }
+  .badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .badge.critical { background: rgba(248,81,73,0.15); color: var(--critical); }
+  .badge.high { background: rgba(240,136,62,0.15); color: var(--high); }
+  .badge.medium { background: rgba(210,153,34,0.15); color: var(--medium); }
+  .badge.low { background: rgba(63,185,80,0.15); color: var(--low); }
+  .badge.info { background: rgba(88,166,255,0.15); color: var(--info); }
+  .badge.exposed { background: rgba(248,81,73,0.15); color: var(--exposed); }
+  .badge.pinned_unknown { background: rgba(210,153,34,0.15); color: var(--unknown); }
+  .badge.safe { background: rgba(63,185,80,0.15); color: var(--safe); }
+  .finding-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+  .finding-repo { font-weight: 600; }
+  .finding-detail { color: var(--text-muted); font-size: 0.85rem; margin-left: 1rem; }
+  .finding-detail code {
+    background: rgba(110,118,129,0.15);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+  .source-chain {
+    color: var(--info);
+    font-size: 0.85rem;
+    margin-left: 1rem;
+    font-style: italic;
+  }
+  .rationale {
+    margin-top: 0.5rem;
+    margin-left: 1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .empty-state {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 3rem;
+    font-size: 1.1rem;
+  }
+  footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<h1>🚨 ActionRadius — Incident Triage</h1>
+<p class="subtitle">Incident Triage — aquasecurity/setup-trivy &mdash; aquasecurity/trivy-action &mdash; 2026-09-02 13:21:52 UTC</p>
+
+    <div class="cards">
+      <div class="card total"><span class="count">0</span><span class="label">Total Matches</span></div>
+      <div class="card exposed"><span class="count">0</span><span class="label">Exposed</span></div>
+      <div class="card unknown"><span class="count">0</span><span class="label">Unknown</span></div>
+      <div class="card safe"><span class="count">0</span><span class="label">Safe</span></div>
+    </div>
+    <p class="finding-detail">Target action: <code>aquasecurity/setup-trivy</code> &nbsp;|&nbsp; Known-safe refs: <code>3fb12ec</code></p>
+<div class="empty-state">No sites reference aquasecurity/setup-trivy in the scanned scope.</div>
+<footer>
+  Generated by ActionRadius &mdash; 2026-09-02 13:21:52 UTC
+</footer>
+</body>
+</html>

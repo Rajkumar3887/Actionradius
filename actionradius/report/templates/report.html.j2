@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1d9; margin: 0; padding: 20px; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+.critical { border-left: 4px solid #da3633; }
+.high { border-left: 4px solid #d29922; }
+.medium { border-left: 4px solid #d29922; }
+.low { border-left: 4px solid #238636; }
+.info { border-left: 4px solid #388bfd; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+.badge-critical { background: #da3633; color: white; }
+.badge-safe { background: #238636; color: white; }
+</style>
+</head>
+<body>
+<h1>ActionRadius Triage Report: {{ target }}</h1>
+
+<h2>Exposed Sites ({{ exposed_findings|length }})</h2>
+{% for f in exposed_findings %}
+<div class="card {{ f.severity }}">
+  <h3><span class="badge badge-critical">{{ f.severity | upper }}</span> {{ f.repo.owner }}/{{ f.repo.name }} : {{ f.uses_site.workflow_path }}</h3>
+  <p><strong>Action:</strong> {{ f.uses_site.uses.raw }}</p>
+  <p><strong>Resolved SHA:</strong> {{ f.resolved.current_sha }}</p>
+  <p><strong>Rationale:</strong> {{ f.rationale }}</p>
+</div>
+{% else %}
+<p>No exposed sites found.</p>
+{% endfor %}
+
+<h2>Safe Sites ({{ safe_findings|length }})</h2>
+{% for f in safe_findings %}
+<div class="card info">
+  <h3><span class="badge badge-safe">SAFE</span> {{ f.repo.owner }}/{{ f.repo.name }} : {{ f.uses_site.workflow_path }}</h3>
+  <p><strong>Action:</strong> {{ f.uses_site.uses.raw }}</p>
+  <p><strong>Resolved SHA:</strong> {{ f.resolved.current_sha }}</p>
+</div>
+{% else %}
+<p>No safe sites found.</p>
+{% endfor %}
+
+</body>
+</html>
