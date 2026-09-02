@@ -18,6 +18,7 @@ from actionradius.report.html_report import generate_html_report
 from actionradius.report.sarif_report import generate_sarif_report
 from actionradius.report.graph_report import generate_graph_report
 from actionradius.match.typosquat import check_typosquat
+from actionradius.match.sha_comment_check import detect_sha_comment_mismatches
 
 app = typer.Typer()
 
@@ -54,6 +55,21 @@ def _scan_workflows(
                     typer.secho(f"  WARNING: Parse error in {path}: {e}", fg=typer.colors.YELLOW, err=True)
 
             wfs = resolve_reusable_workflows(client, wfs)
+
+            # SHA/comment mismatch detection — catches spoofed version comments
+            for path, text in files_dict.items():
+                try:
+                    mismatches = detect_sha_comment_mismatches(client, path, text)
+                    for mm in mismatches:
+                        typer.secho(
+                            f"[SHA MISMATCH] {r.owner}/{r.name}:{mm.workflow_path}:{mm.line_number} "
+                            f"pins {mm.owner}/{mm.repo}@{mm.pinned_sha[:12]}... "
+                            f"but comment says '{mm.comment_tag}' "
+                            f"(tag actually resolves to {mm.actual_tag_sha[:12] if mm.actual_tag_sha else '???'}...)",
+                            fg=typer.colors.RED, err=True
+                        )
+                except Exception:
+                    pass
 
             for wf in wfs:
                 if ioc_search:
