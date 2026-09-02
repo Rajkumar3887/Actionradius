@@ -1,6 +1,8 @@
 import typer
+import json
 import sys
 from typing import Optional
+from pathlib import Path
 from actionradius.config import get_config
 from actionradius.github_client import GitHubClient
 from actionradius.inventory.repo_lister import get_org_repos, get_repo
@@ -8,7 +10,7 @@ from actionradius.inventory.tree_fetcher import fetch_workflow_contents
 from actionradius.parser.workflow_parser import parse_workflow_yaml
 from actionradius.parser.composite_resolver import resolve_reusable_workflows
 from actionradius.resolve.ref_resolver import resolve_mutable_ref
-from actionradius.match.matcher import is_match, is_compromised
+from actionradius.match.matcher import is_match, is_compromised, is_in_bad_range
 from actionradius.score.scoring import calculate_risk_score
 from actionradius.models import Finding
 from actionradius.report.json_report import generate_json_report
@@ -18,12 +20,98 @@ from actionradius.report.graph_report import generate_graph_report
 
 app = typer.Typer()
 
+
+def _load_feed(feed_path: str) -> list[dict]:
+    """Load a compromised-actions JSON feed file."""
+    with open(feed_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("Feed must be a JSON array of entries")
+    return data
+
+
+def _scan_workflows(
+    client: GitHubClient,
+    repos: list,
+    target: str,
+    safe_refs: list[str],
+    bad_range: dict | None,
+    ioc_search: str | None,
+    findings: list[Finding],
+    ioc_matches: list,
+):
+    """Core scanning loop shared by single-target and feed modes."""
+    for r in repos:
+        typer.secho(f"Scanning {r.owner}/{r.name}...", fg=typer.colors.BLUE, err=True)
+        try:
+            files_dict = fetch_workflow_contents(client, r.owner, r.name, r.default_branch)
+            wfs = []
+            for path, text in files_dict.items():
+                try:
+                    wfs.append(parse_workflow_yaml(r, path, text))
+                except Exception as e:
+                    typer.secho(f"  WARNING: Parse error in {path}: {e}", fg=typer.colors.YELLOW, err=True)
+
+            wfs = resolve_reusable_workflows(client, wfs)
+
+            for wf in wfs:
+                if ioc_search:
+                    for script in getattr(wf, 'run_scripts', []):
+                        if ioc_search in script:
+                            ioc_matches.append((r.owner, r.name, wf.path, script))
+                            typer.secho(f"[IOC MATCH] {r.owner}/{r.name}:{wf.path}", fg=typer.colors.RED, err=True)
+
+                if target:
+                    for site in wf.uses_sites:
+                        if is_match(site, target):
+                            resolved = resolve_mutable_ref(client, site.uses)
+
+                            # Determine compromise status
+                            if bad_range:
+                                compromised = is_in_bad_range(
+                                    client, resolved,
+                                    bad_range["introduced"],
+                                    bad_range["fixed"],
+                                )
+                            else:
+                                compromised = is_compromised(resolved, safe_refs)
+
+                            score, severity, rationale = calculate_risk_score(
+                                is_mutable=resolved.is_mutable,
+                                is_compromised=compromised,
+                                is_orphan=resolved.is_orphan,
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                runs_on_self_hosted=wf.runs_on_self_hosted
+                            )
+
+                            f = Finding(
+                                repo=r,
+                                uses_site=site,
+                                resolved=resolved,
+                                is_compromised_version=compromised,
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                severity=severity,
+                                score=score,
+                                rationale=rationale
+                            )
+                            findings.append(f)
+        except Exception as e:
+            typer.secho(f"  WARNING: failed scanning {r.owner}/{r.name}: {e}", fg=typer.colors.YELLOW, err=True)
+
+
 @app.command()
 def scan(
     target: Optional[str] = typer.Option(None, "--target", help="Target action (e.g. aquasecurity/trivy-action)"),
     org: Optional[str] = typer.Option(None, "--org", help="Organization to scan"),
     repo: Optional[str] = typer.Option(None, "--repo", help="Single repo to scan (format: owner/name)"),
     safe_refs: list[str] = typer.Option([], "--safe-ref", help="Safe SHAs/tags (can pass multiple)"),
+    compromised_after: Optional[str] = typer.Option(None, "--compromised-after", help="Bad range start SHA (commits at or after this are compromised)"),
+    compromised_before: Optional[str] = typer.Option(None, "--compromised-before", help="Bad range end SHA (commits at or before this are compromised, i.e. the fix commit)"),
+    target_feed: Optional[str] = typer.Option(None, "--target-feed", help="Path to a compromised-actions JSON feed file"),
     json_out: Optional[str] = typer.Option(None, "--json", help="Path to write JSON report"),
     html_out: Optional[str] = typer.Option(None, "--html", help="Path to write HTML report"),
     sarif_out: Optional[str] = typer.Option(None, "--sarif", help="Path to write SARIF report (for GitHub Advanced Security)"),
@@ -34,8 +122,8 @@ def scan(
     config = get_config()
     client = GitHubClient(token=config.github_token)
 
-    if not target and not ioc_search:
-        typer.secho("Error: Must provide --target or --ioc-search", fg=typer.colors.RED, err=True)
+    if not target and not ioc_search and not target_feed:
+        typer.secho("Error: Must provide --target, --target-feed, or --ioc-search", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
     if not org and not repo:
@@ -53,82 +141,75 @@ def scan(
     findings: list[Finding] = []
     ioc_matches = []
 
-    for r in repos:
-        typer.secho(f"Scanning {r.owner}/{r.name}...", fg=typer.colors.BLUE, err=True)
-        try:
-            files_dict = fetch_workflow_contents(client, r.owner, r.name, r.default_branch)
-            wfs = []
-            for path, text in files_dict.items():
-                try:
-                    wfs.append(parse_workflow_yaml(r, path, text))
-                except Exception as e:
-                    typer.secho(f"  WARNING: Parse error in {path}: {e}", fg=typer.colors.YELLOW, err=True)
-            
-            wfs = resolve_reusable_workflows(client, wfs)
+    # --- Feed mode: iterate over every entry in the curated JSON ---
+    if target_feed:
+        feed = _load_feed(target_feed)
+        typer.secho(f"Loaded {len(feed)} entries from feed: {target_feed}", fg=typer.colors.CYAN, err=True)
 
-            for wf in wfs:
-                if ioc_search:
-                    for script in getattr(wf, 'run_scripts', []):
-                        if ioc_search in script:
-                            ioc_matches.append((r.owner, r.name, wf.path, script))
-                            typer.secho(f"[IOC MATCH] {r.owner}/{r.name}:{wf.path}", fg=typer.colors.RED, err=True)
+        for entry in feed:
+            action = entry["action"]
+            bad_range = entry.get("bad_range")
+            cve = entry.get("cve", "N/A")
+            typer.secho(f"\n--- Scanning for {action} ({cve}) ---", fg=typer.colors.MAGENTA, err=True)
 
-                if target:
-                    for site in wf.uses_sites:
-                        if is_match(site, target):
-                            resolved = resolve_mutable_ref(client, site.uses)
-                            compromised = is_compromised(resolved, safe_refs)
-                            score, severity, rationale = calculate_risk_score(
-                                is_mutable=resolved.is_mutable,
-                                is_compromised=compromised,
-                                is_orphan=resolved.is_orphan,
-                                trigger=wf.triggers,
-                                permissions=wf.permissions,
-                                secrets=wf.secrets,
-                                runs_on_self_hosted=wf.runs_on_self_hosted
-                            )
-                            
-                            f = Finding(
-                                repo=r,
-                                uses_site=site,
-                                resolved=resolved,
-                                is_compromised_version=compromised,
-                                trigger=wf.triggers,
-                                permissions=wf.permissions,
-                                secrets=wf.secrets,
-                                severity=severity,
-                                score=score,
-                                rationale=rationale
-                            )
-                            findings.append(f)
-        except Exception as e:
-            typer.secho(f"  WARNING: failed scanning {r.owner}/{r.name}: {e}", fg=typer.colors.YELLOW, err=True)
+            _scan_workflows(
+                client=client,
+                repos=repos,
+                target=action,
+                safe_refs=[],
+                bad_range=bad_range,
+                ioc_search=None,
+                findings=findings,
+                ioc_matches=ioc_matches,
+            )
 
+    # --- Single-target mode ---
+    else:
+        bad_range = None
+        if compromised_after and compromised_before:
+            bad_range = {"introduced": compromised_after, "fixed": compromised_before}
+
+        _scan_workflows(
+            client=client,
+            repos=repos,
+            target=target,
+            safe_refs=safe_refs,
+            bad_range=bad_range,
+            ioc_search=ioc_search,
+            findings=findings,
+            ioc_matches=ioc_matches,
+        )
+
+    # --- IOC results ---
     if ioc_search:
         typer.secho(f"\nIOC Search complete. Found {len(ioc_matches)} scripts containing '{ioc_search}'.", fg=typer.colors.GREEN, err=True)
         return
 
+    # --- Report output ---
     typer.secho(f"\nScan complete. Found {len(findings)} matching sites.", fg=typer.colors.GREEN, err=True)
-    
+
+    report_target = target or "multi-target (feed)"
+
     if json_out:
         generate_json_report(findings, json_out)
         typer.secho(f"Wrote JSON report to {json_out}", fg=typer.colors.GREEN, err=True)
-        
+
     if html_out:
-        generate_html_report(findings, html_out, target)
+        generate_html_report(findings, html_out, report_target)
         typer.secho(f"Wrote HTML report to {html_out}", fg=typer.colors.GREEN, err=True)
-        
+
     if sarif_out:
         generate_sarif_report(findings, sarif_out)
         typer.secho(f"Wrote SARIF report to {sarif_out}", fg=typer.colors.GREEN, err=True)
 
     if graph_out:
-        generate_graph_report(findings, graph_out, target)
+        generate_graph_report(findings, graph_out, report_target)
         typer.secho(f"Wrote Graphviz DOT report to {graph_out}", fg=typer.colors.GREEN, err=True)
 
     if not json_out and not html_out and not sarif_out and not graph_out:
         for f in findings:
             typer.secho(f"[{f.severity.upper()}] {f.repo.owner}/{f.repo.name}:{f.uses_site.workflow_path} -> {f.uses_site.uses.raw}", err=True)
+
 
 if __name__ == "__main__":
     app()

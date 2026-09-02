@@ -1,4 +1,5 @@
 from actionradius.models import UsesSite, ResolvedRef
+from actionradius.github_client import GitHubClient
 
 def is_match(site: UsesSite, target_action: str) -> bool:
     """
@@ -37,3 +38,52 @@ def is_compromised(resolved: ResolvedRef, safe_refs: list[str]) -> bool:
             return False
             
     return True
+
+
+def is_in_bad_range(
+    client: GitHubClient,
+    resolved: ResolvedRef,
+    bad_introduced: str,
+    bad_fixed: str,
+) -> bool:
+    """
+    Check if the resolved SHA falls within a known-bad commit range.
+    
+    Uses the GitHub Compare API:
+    - Compare introduced...current_sha: if status is 'ahead' or 'identical',
+      the SHA was introduced at or after the bad commit.
+    - Compare current_sha...fixed: if status is 'behind' or 'identical',
+      the SHA is at or before the fix.
+    
+    If both conditions are true, the SHA is inside the compromised window.
+    If either API call fails, we conservatively assume compromised.
+    """
+    sha = resolved.current_sha
+    if not sha:
+        return True  # Can't resolve → assume worst case
+        
+    owner = resolved.uses.owner
+    repo = resolved.uses.repo
+    if not owner or not repo:
+        return True
+    
+    try:
+        # Is the SHA at or after the bad commit was introduced?
+        cmp_intro = client._get(f"/repos/{owner}/{repo}/compare/{bad_introduced}...{sha}")
+        intro_status = cmp_intro.get("status", "")
+        # 'ahead' = sha is after introduced, 'identical' = sha IS the introduced commit
+        if intro_status not in ("ahead", "identical"):
+            return False  # SHA is before the bad range → safe
+
+        # Is the SHA at or before the fix?
+        cmp_fix = client._get(f"/repos/{owner}/{repo}/compare/{sha}...{bad_fixed}")
+        fix_status = cmp_fix.get("status", "")
+        # 'ahead' = fix is after sha, 'identical' = sha IS the fix commit
+        if fix_status in ("ahead", "identical"):
+            return True  # SHA is inside the bad window
+        
+        return False  # SHA is after the fix → safe
+        
+    except Exception:
+        # API error (404, rate limit, etc.) → conservatively flag as compromised
+        return True
