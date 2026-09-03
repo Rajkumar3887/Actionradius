@@ -12,7 +12,7 @@ from actionradius.parser.composite_resolver import resolve_reusable_workflows
 from actionradius.resolve.ref_resolver import resolve_mutable_ref
 from actionradius.match.matcher import is_match, determine_compromise_status
 from actionradius.score.scoring import calculate_risk_score
-from actionradius.models import Finding
+from actionradius.models import Finding, ResolvedRef
 from actionradius.report.json_report import generate_json_report
 from actionradius.report.html_report import generate_html_report
 from actionradius.report.sarif_report import generate_sarif_report
@@ -91,6 +91,45 @@ def _scan_workflows(
 
                 if target:
                     for site in wf.uses_sites:
+                        # Docker mutable-tag detection — runs on every target scan, independent of target
+                        if site.uses.ref_type == "docker":
+                            resolved = ResolvedRef(
+                                uses=site.uses,
+                                current_sha=None,
+                                is_mutable=True,
+                            )
+                            score, severity, rationale = calculate_risk_score(
+                                is_mutable=True,
+                                compromise_status="UNKNOWN",
+                                is_orphan=False,
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                runs_on_self_hosted=wf.runs_on_self_hosted,
+                                is_docker_mutable=True,
+                            )
+                            f = Finding(
+                                repo=r,
+                                uses_site=site,
+                                resolved=resolved,
+                                compromise_status="UNKNOWN",
+                                historical_exposure="UNKNOWN",
+                                pin_type="docker",
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                severity=severity,
+                                score=score,
+                                rationale=rationale,
+                            )
+                            findings.append(f)
+                            typer.secho(
+                                f"[DOCKER] {r.owner}/{r.name}:{site.workflow_path} "
+                                f"uses mutable Docker tag: {site.uses.raw}",
+                                fg=typer.colors.YELLOW, err=True,
+                            )
+                            continue  # Already handled — skip target matching for this site
+
                         if is_match(site, target):
                             resolved = resolve_mutable_ref(client, site.uses)
 
@@ -146,10 +185,16 @@ def scan(
     graph_out: Optional[str] = typer.Option(None, "--graph", help="Path to write Graphviz DOT report"),
     ioc_search: Optional[str] = typer.Option(None, "--ioc-search", help="Search string/domain in workflow run scripts"),
     check_exfil: bool = typer.Option(False, "--check-exfil", help="Search org members for tpcp-docs exfiltration repos"),
+    weights_file: Optional[str] = typer.Option(None, "--weights", help="Path to custom weights.yaml for scoring"),
 ):
     """Scan repositories for exposed GitHub Actions."""
     config = get_config()
     client = GitHubClient(token=config.github_token)
+
+    # Load custom weights if provided
+    if weights_file:
+        from actionradius.score.scoring import load_weights
+        load_weights(weights_file)
 
     # --- Argument validation ---
     if not target and not ioc_search and not target_feed and not check_exfil:

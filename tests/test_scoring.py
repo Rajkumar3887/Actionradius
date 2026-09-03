@@ -61,3 +61,24 @@ def test_unknown_compromise_scores_medium():
 
     assert score == 4.0
     assert severity == "medium"
+
+def test_docker_mutable_tag_scores_high():
+    """Docker mutable tag gets +2.0 plus +4.0 unknown_compromise = 6.0 high."""
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, [], False)
+
+    score, severity, rationale = calculate_risk_score(
+        is_mutable=True,
+        compromise_status="UNKNOWN",
+        is_orphan=False,
+        trigger=trigger,
+        permissions=perms,
+        secrets=secrets,
+        runs_on_self_hosted=False,
+        is_docker_mutable=True,
+    )
+
+    assert score == 6.0  # 2.0 docker_mutable_tag + 4.0 unknown_compromise
+    assert severity == "high"
+    assert "Docker tag" in rationale

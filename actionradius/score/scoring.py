@@ -14,6 +14,7 @@ _DEFAULT_WEIGHTS = {
     "explicit_secrets": 2.0,
     "self_hosted_runner": 2.0,
     "typosquat_penalty": 5.0,
+    "docker_mutable_tag": 2.0,
 }
 
 _WEIGHTS = dict(_DEFAULT_WEIGHTS)
@@ -52,6 +53,7 @@ def calculate_risk_score(
     secrets,
     runs_on_self_hosted: bool,
     is_typosquat: bool = False,
+    is_docker_mutable: bool = False,
 ) -> tuple[float, str, str]:
     """
     Returns (score, severity, rationale).
@@ -61,6 +63,10 @@ def calculate_risk_score(
     w = _WEIGHTS
     score = 0.0
     rationale = []
+
+    if is_docker_mutable:
+        score += w["docker_mutable_tag"]
+        rationale.append(f"Mutable Docker tag — no digest pin (+{w['docker_mutable_tag']})")
 
     if is_orphan:
         score += w["orphan_commit"]

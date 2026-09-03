@@ -18,3 +18,11 @@ report.html
 *.egg-info/
 build/
 dist/
+
+# Dev scratch files
+scratch/
+
+# Output reports (generated, not source)
+report*.json
+findings*.json
+output/
