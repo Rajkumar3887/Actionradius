@@ -17,25 +17,26 @@ def check_historical_exposure(
         return "UNKNOWN"
         
     try:
-        data = client._get(f"/repos/{owner}/{repo}/commits", params={"path": workflow_path, "per_page": 1})
-        if not data or not isinstance(data, list) or len(data) == 0:
+        # To determine if the workflow existed during the attack window,
+        # we ask GitHub for the most recent commit to this file UNTIL the end of the window.
+        # If the file existed before or during the window, the API will return a commit.
+        # If it was created strictly AFTER the window, it returns an empty list.
+        end_date_str = attack_window.get("end")
+        if not end_date_str:
+            return "UNKNOWN"
+
+        params = {
+            "path": workflow_path,
+            "until": end_date_str,
+            "per_page": 1
+        }
+        
+        data = client._get(f"/repos/{owner}/{repo}/commits", params=params)
+        
+        if not isinstance(data, list):
             return "UNKNOWN"
             
-        commit_date_str = data[0].get("commit", {}).get("committer", {}).get("date")
-        if not commit_date_str:
-            return "UNKNOWN"
-            
-        commit_date = datetime.fromisoformat(commit_date_str.replace("Z", "+00:00"))
-        
-        # We only strictly need end_date to know if it was exposed.
-        # If the workflow's last modification was AFTER the attack window ended,
-        # we can't be sure it contained the compromised action during the attack
-        # (it might have been added recently).
-        # If the last modification was ON OR BEFORE the attack window ended,
-        # and it currently has the action, it was running during the attack.
-        end_date = datetime.fromisoformat(attack_window["end"].replace("Z", "+00:00"))
-        
-        if commit_date <= end_date:
+        if len(data) > 0:
             return "COMPROMISED"
             
         return "UNKNOWN"
