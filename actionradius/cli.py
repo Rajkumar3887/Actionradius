@@ -41,6 +41,7 @@ def _scan_workflows(
     ioc_search: str | None,
     findings: list[Finding],
     ioc_matches: list,
+    attack_window: dict | None = None,
 ):
     """Core scanning loop shared by single-target and feed modes."""
     for r in repos:
@@ -108,12 +109,17 @@ def _scan_workflows(
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
                                 is_docker_mutable=True,
                             )
+                            hist_exp = "UNKNOWN"
+                            if attack_window:
+                                from actionradius.context.historical import check_historical_exposure
+                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+
                             f = Finding(
                                 repo=r,
                                 uses_site=site,
                                 resolved=resolved,
                                 compromise_status="UNKNOWN",
-                                historical_exposure="UNKNOWN",
+                                historical_exposure=hist_exp,
                                 pin_type="docker",
                                 trigger=wf.triggers,
                                 permissions=wf.permissions,
@@ -151,12 +157,17 @@ def _scan_workflows(
                                 runs_on_self_hosted=wf.runs_on_self_hosted
                             )
 
+                            hist_exp = "UNKNOWN"
+                            if attack_window:
+                                from actionradius.context.historical import check_historical_exposure
+                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+
                             f = Finding(
                                 repo=r,
                                 uses_site=site,
                                 resolved=resolved,
                                 compromise_status=compromise_status,
-                                historical_exposure="UNKNOWN",
+                                historical_exposure=hist_exp,
                                 pin_type=site.uses.ref_type,
                                 trigger=wf.triggers,
                                 permissions=wf.permissions,
@@ -265,6 +276,7 @@ def scan(
                 ioc_search=None,
                 findings=findings,
                 ioc_matches=ioc_matches,
+                attack_window=entry.get("attack_window"),
             )
 
     # --- Single-target mode ---
@@ -282,6 +294,7 @@ def scan(
             ioc_search=ioc_search,
             findings=findings,
             ioc_matches=ioc_matches,
+            attack_window=None,
         )
 
     # --- IOC results ---
