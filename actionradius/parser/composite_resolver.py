@@ -7,9 +7,8 @@ def resolve_reusable_workflows(
     workflows: list[WorkflowFile],
     max_depth: int = 2,
 ) -> list[WorkflowFile]:
-    visited: set[tuple[str, str, str, str]] = set()
-
     for wf in workflows:
+        visited: set[tuple[str, str, str, str]] = set()
         transitive_sites: list[UsesSite] = []
 
         for site in wf.uses_sites:

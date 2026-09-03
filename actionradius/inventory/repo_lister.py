@@ -60,7 +60,16 @@ def check_exfil_repos(client: GitHubClient, org: str) -> list[str]:
     hits = []
 
     try:
-        members = client._get(f"/orgs/{org}/members", params={"per_page": 100})
+        members = []
+        page = 1
+        while True:
+            chunk = client._get(f"/orgs/{org}/members", params={"per_page": 100, "page": page})
+            if not chunk:
+                break
+            members.extend(chunk)
+            if len(chunk) < 100:
+                break
+            page += 1
     except Exception:
         # Fallback: try checking the org itself
         members = [{"login": org}]

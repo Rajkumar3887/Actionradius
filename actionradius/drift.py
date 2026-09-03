@@ -3,9 +3,10 @@ import typer
 
 SEVERITY_RANKS = {
     "info": 0,
-    "medium": 1,
-    "high": 2,
-    "critical": 3
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "critical": 4
 }
 
 def load_report(path: str) -> dict:
