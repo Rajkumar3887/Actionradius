@@ -15,6 +15,8 @@ _DEFAULT_WEIGHTS = {
     "self_hosted_runner": 2.0,
     "typosquat_penalty": 5.0,
     "docker_mutable_tag": 2.0,
+    "publisher_unverified": 2.0,
+    "external_taint_finding": 1.0,
 }
 
 _WEIGHTS = dict(_DEFAULT_WEIGHTS)
@@ -54,6 +56,8 @@ def calculate_risk_score(
     runs_on_self_hosted: bool,
     is_typosquat: bool = False,
     is_docker_mutable: bool = False,
+    is_unverified_publisher: bool = False,
+    has_external_finding: bool = False,
 ) -> tuple[float, str, str]:
     """
     Returns (score, severity, rationale).
@@ -104,6 +108,14 @@ def calculate_risk_score(
     if is_typosquat:
         score += w["typosquat_penalty"]
         rationale.append(f"Suspected typosquat of a popular action (+{w['typosquat_penalty']})")
+
+    if is_unverified_publisher:
+        score += w["publisher_unverified"]
+        rationale.append(f"Unverified/new publisher (+{w['publisher_unverified']})")
+
+    if has_external_finding:
+        score += w["external_taint_finding"]
+        rationale.append(f"External scanner finding (zizmor/poutine) (+{w['external_taint_finding']})")
 
     if score >= 8:
         severity = "critical"

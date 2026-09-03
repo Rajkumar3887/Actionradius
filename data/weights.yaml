@@ -10,3 +10,5 @@ explicit_secrets: 2.0
 self_hosted_runner: 2.0
 typosquat_penalty: 5.0
 docker_mutable_tag: 2.0
+publisher_unverified: 2.0
+external_taint_finding: 1.0

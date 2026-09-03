@@ -82,3 +82,24 @@ def test_docker_mutable_tag_scores_high():
     assert score == 6.0  # 2.0 docker_mutable_tag + 4.0 unknown_compromise
     assert severity == "high"
     assert "Docker tag" in rationale
+
+def test_external_finding_bumps_score():
+    """External SARIF finding adds +1.0 to the score."""
+    trigger = TriggerContext([], "low", False)
+    perms = PermissionsContext("workflow", "read", {})
+    secrets = SecretsContext(False, [], False)
+
+    score, severity, rationale = calculate_risk_score(
+        is_mutable=False,
+        compromise_status="SAFE",
+        is_orphan=False,
+        trigger=trigger,
+        permissions=perms,
+        secrets=secrets,
+        runs_on_self_hosted=False,
+        has_external_finding=True,
+    )
+
+    assert score == 1.0
+    assert severity == "low"
+    assert "external" in rationale.lower()

@@ -19,6 +19,7 @@ from actionradius.report.sarif_report import generate_sarif_report
 from actionradius.report.graph_report import generate_graph_report
 from actionradius.match.typosquat import check_typosquat
 from actionradius.match.sha_comment_check import detect_sha_comment_mismatches
+from actionradius.context.publisher_trust import check_publisher_trust
 
 app = typer.Typer()
 
@@ -43,12 +44,18 @@ def _scan_workflows(
     ioc_matches: list,
     attack_window: dict | None = None,
     run_typosquat: bool = True,
+    external_findings: set | None = None,
+    prefetched_files: dict | None = None,
 ):
     """Core scanning loop shared by single-target and feed modes."""
     for r in repos:
         typer.secho(f"Scanning {r.owner}/{r.name}...", fg=typer.colors.BLUE, err=True)
         try:
-            files_dict = fetch_workflow_contents(client, r.owner, r.name, r.default_branch)
+            repo_key = f"{r.owner}/{r.name}"
+            if prefetched_files and repo_key in prefetched_files:
+                files_dict = prefetched_files[repo_key]
+            else:
+                files_dict = fetch_workflow_contents(client, r.owner, r.name, r.default_branch)
             wfs = []
             for path, text in files_dict.items():
                 try:
@@ -101,7 +108,8 @@ def _scan_workflows(
                                 permissions=wf.permissions,
                                 secrets=wf.secrets,
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
-                                is_typosquat=True
+                                is_typosquat=True,
+                                has_external_finding=(external_findings is not None and wf.path in external_findings),
                             )
                             
                             hist_exp = "UNKNOWN"
@@ -144,6 +152,7 @@ def _scan_workflows(
                                 secrets=wf.secrets,
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
                                 is_docker_mutable=True,
+                                has_external_finding=(external_findings is not None and wf.path in external_findings),
                             )
                             hist_exp = "UNKNOWN"
                             if attack_window:
@@ -183,6 +192,10 @@ def _scan_workflows(
                                 bad_range=bad_range,
                             )
 
+                            publisher_trust = "unknown"
+                            if site.uses.owner and site.uses.repo:
+                                publisher_trust = check_publisher_trust(client, site.uses.owner, site.uses.repo)
+
                             score, severity, rationale = calculate_risk_score(
                                 is_mutable=resolved.is_mutable,
                                 compromise_status=compromise_status,
@@ -190,7 +203,9 @@ def _scan_workflows(
                                 trigger=wf.triggers,
                                 permissions=wf.permissions,
                                 secrets=wf.secrets,
-                                runs_on_self_hosted=wf.runs_on_self_hosted
+                                runs_on_self_hosted=wf.runs_on_self_hosted,
+                                is_unverified_publisher=(publisher_trust == "new_org"),
+                                has_external_finding=(external_findings is not None and wf.path in external_findings),
                             )
 
                             hist_exp = "UNKNOWN"
@@ -233,6 +248,8 @@ def scan(
     ioc_search: Optional[str] = typer.Option(None, "--ioc-search", help="Search string/domain in workflow run scripts"),
     check_exfil: bool = typer.Option(False, "--check-exfil", help="Search org members for tpcp-docs exfiltration repos"),
     weights_file: Optional[str] = typer.Option(None, "--weights", help="Path to custom weights.yaml for scoring"),
+    external_sarif: Optional[str] = typer.Option(None, "--external-sarif", help="Path to a SARIF file from an external linter (e.g. zizmor/poutine)"),
+    concurrent: bool = typer.Option(False, "--concurrent", help="Use async concurrent fetching for org scans"),
 ):
     """Scan repositories for exposed GitHub Actions."""
     config = get_config()
@@ -289,6 +306,22 @@ def scan(
         owner, name = repo.split("/", 1)
         repos = [get_repo(client, owner, name)]
 
+    external_findings = None
+    if external_sarif:
+        from actionradius.context.external_findings import load_external_sarif
+        external_findings = load_external_sarif(external_sarif)
+        typer.secho(f"Loaded {len(external_findings)} tainted workflow paths from external SARIF.", fg=typer.colors.CYAN, err=True)
+
+    prefetched_files = None
+    if concurrent:
+        try:
+            from actionradius.async_scan import prefetch_all_workflows
+            typer.secho(f"Prefetching workflows for {len(repos)} repos concurrently...", fg=typer.colors.CYAN, err=True)
+            prefetched_files = prefetch_all_workflows(token=config.github_token, repos=repos)
+        except ImportError:
+            typer.secho("Error: --concurrent requires httpx. Run: pip install httpx", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+
     findings: list[Finding] = []
     ioc_matches = []
 
@@ -314,6 +347,8 @@ def scan(
                 ioc_matches=ioc_matches,
                 attack_window=entry.get("attack_window"),
                 run_typosquat=(i == 0),
+                external_findings=external_findings,
+                prefetched_files=prefetched_files,
             )
 
     # --- Single-target mode ---
@@ -332,6 +367,8 @@ def scan(
             findings=findings,
             ioc_matches=ioc_matches,
             attack_window=None,
+            external_findings=external_findings,
+            prefetched_files=prefetched_files,
         )
 
     # --- IOC results ---
