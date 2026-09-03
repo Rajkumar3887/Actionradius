@@ -89,6 +89,39 @@ def _scan_workflows(
                             f"(edit distance: {squat['edit_distance']})",
                             fg=typer.colors.RED, err=True
                         )
+                        
+                        resolved = ResolvedRef(uses=site.uses, current_sha=None, is_mutable=True)
+                        score, severity, rationale = calculate_risk_score(
+                            is_mutable=True,
+                            compromise_status="UNKNOWN",
+                            is_orphan=False,
+                            trigger=wf.triggers,
+                            permissions=wf.permissions,
+                            secrets=wf.secrets,
+                            runs_on_self_hosted=wf.runs_on_self_hosted,
+                            is_typosquat=True
+                        )
+                        
+                        hist_exp = "UNKNOWN"
+                        if attack_window:
+                            from actionradius.context.historical import check_historical_exposure
+                            hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+                            
+                        f = Finding(
+                            repo=r,
+                            uses_site=site,
+                            resolved=resolved,
+                            compromise_status="UNKNOWN",
+                            historical_exposure=hist_exp,
+                            pin_type=site.uses.ref_type,
+                            trigger=wf.triggers,
+                            permissions=wf.permissions,
+                            secrets=wf.secrets,
+                            severity=severity,
+                            score=score,
+                            rationale=rationale
+                        )
+                        findings.append(f)
 
                 if target:
                     for site in wf.uses_sites:
@@ -320,8 +353,11 @@ def scan(
         typer.secho(f"Wrote SARIF report to {sarif_out}", fg=typer.colors.GREEN, err=True)
 
     if graph_out:
-        generate_graph_report(findings, graph_out, report_target)
-        typer.secho(f"Wrote Graphviz DOT report to {graph_out}", fg=typer.colors.GREEN, err=True)
+        if target_feed:
+            typer.secho("WARNING: --graph not supported with --target-feed. Run per-action for per-action graphs.", fg=typer.colors.YELLOW, err=True)
+        else:
+            generate_graph_report(findings, graph_out, report_target)
+            typer.secho(f"Wrote Graphviz DOT report to {graph_out}", fg=typer.colors.GREEN, err=True)
 
     if not json_out and not html_out and not sarif_out and not graph_out:
         for f in findings:

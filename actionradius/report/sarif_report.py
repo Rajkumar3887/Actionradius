@@ -9,8 +9,11 @@ def generate_sarif_report(findings: list[Finding], output_path: str):
     
     results = []
     for f in findings:
-        if not f.is_compromised_version:
+        if f.severity not in ("critical", "high", "medium"):
             continue
+            
+        rule_id = "ActionRadius-Typosquat" if "typosquat" in (f.rationale or "").lower() \
+                  else "ActionRadius-CompromisedDependency"
             
         # SARIF uses its own severity levels
         sarif_severity = "warning"
@@ -18,7 +21,7 @@ def generate_sarif_report(findings: list[Finding], output_path: str):
             sarif_severity = "error"
             
         results.append({
-            "ruleId": "ActionRadius-CompromisedDependency",
+            "ruleId": rule_id,
             "level": sarif_severity,
             "message": {
                 "text": f"Compromised GitHub Action detected: {f.uses_site.uses.raw}. Rationale: {f.rationale}"
@@ -52,6 +55,12 @@ def generate_sarif_report(findings: list[Finding], output_path: str):
                                 "id": "ActionRadius-CompromisedDependency",
                                 "shortDescription": {
                                     "text": "Compromised third-party GitHub Action dependency"
+                                }
+                            },
+                            {
+                                "id": "ActionRadius-Typosquat",
+                                "shortDescription": {
+                                    "text": "Typosquatted GitHub Action dependency"
                                 }
                             }
                         ]
