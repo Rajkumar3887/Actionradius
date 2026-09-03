@@ -7,7 +7,7 @@ def test_sarif_filters_low_severity_and_maps_rules(tmp_path):
     out_path = tmp_path / "out.sarif"
     
     repo = RepoRef("owner", "repo", "main", False)
-    uses = UsesRef("owner/action@v1", "owner", "action", "v1", "tag", "tag", False)
+    uses = UsesRef("owner/action@v1", "owner", "action", None, "v1", "tag", False)
     site = UsesSite("path.yml", "job_1", 1, uses, 0, [])
     
     f_critical = Finding(repo, site, None, "COMPROMISED", "UNKNOWN", "tag", None, None, None, "critical", 10.0, "reason", is_typosquat=False)

@@ -52,7 +52,9 @@ def check_historical_exposure(
         
         # Verify the target action existed in this historical version
         for h_site in historical_wf.uses_sites:
-            if h_site.uses.owner == target_uses.owner and h_site.uses.repo == target_uses.repo:
+            if (h_site.uses.owner == target_uses.owner and 
+                h_site.uses.repo == target_uses.repo and 
+                h_site.uses.ref == target_uses.ref):
                 return "COMPROMISED"
                 
         return "UNKNOWN"
