@@ -70,7 +70,9 @@ def check_exfil_repos(client: GitHubClient, org: str) -> list[str]:
         try:
             client._get(f"/repos/{login}/tpcp-docs")
             hits.append(login)
-        except (ValueError, Exception):
+        except ValueError:
             pass  # 404 = not found, expected for clean accounts
+        except Exception as e:
+            print(f"  WARNING: tpcp-docs check failed for {login}: {e}")
 
     return hits

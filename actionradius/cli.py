@@ -77,8 +77,8 @@ def _scan_workflows(
                             f"(tag actually resolves to {mm.actual_tag_sha[:12] if mm.actual_tag_sha else '???'}...)",
                             fg=typer.colors.RED, err=True
                         )
-                except Exception:
-                    pass
+                except Exception as e:
+                    typer.secho(f"  WARNING: SHA/comment mismatch detection failed for {path}: {e}", fg=typer.colors.YELLOW, err=True)
 
             for wf in wfs:
                 if ioc_search:

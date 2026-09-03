@@ -214,3 +214,56 @@ def test_determine_status_returns_unknown_when_nothing_provided():
         bad_range=None,
     )
     assert result == "UNKNOWN"
+
+def test_mismatch_detector_raises_warning():
+    """Verify that an exception in detect_sha_comment_mismatches causes a warning instead of a silent pass."""
+    from actionradius.cli import _scan_workflows
+    from actionradius.models import RepoRef
+    import typer
+    
+    client = MagicMock()
+    repos = [RepoRef("owner", "repo", "main", False)]
+    # Mock fetch_workflow_contents to return a dummy workflow
+    with patch("actionradius.cli.fetch_workflow_contents") as mock_fetch:
+        mock_fetch.return_value = {".github/workflows/ci.yml": "name: CI"}
+        with patch("actionradius.cli.parse_workflow_yaml") as mock_parse:
+            mock_parse.return_value = MagicMock()
+            with patch("actionradius.cli.detect_sha_comment_mismatches") as mock_mismatch:
+                mock_mismatch.side_effect = Exception("Simulated API failure")
+                with patch("typer.secho") as mock_secho:
+                    _scan_workflows(client, repos, "target", [], None, None, [], [])
+                    # Check that secho was called with the warning message
+                    calls = [call.args[0] for call in mock_secho.call_args_list]
+                    assert any("WARNING: SHA/comment mismatch detection failed" in call for call in calls)
+
+def test_exfil_check_raises_warning():
+    """Verify that an unexpected exception in check_exfil_repos causes a warning."""
+    from actionradius.inventory.repo_lister import check_exfil_repos
+    import builtins
+    
+    client = MagicMock()
+    client._get.side_effect = [
+        [{"login": "member1"}], # /orgs/myorg/members
+        Exception("Unexpected 500 Error") # /repos/member1/tpcp-docs
+    ]
+    
+    with patch("builtins.print") as mock_print:
+        hits = check_exfil_repos(client, "myorg")
+        calls = [call.args[0] for call in mock_print.call_args_list]
+        assert any("WARNING: tpcp-docs check failed" in call for call in calls)
+        assert len(hits) == 0
+
+def test_exfil_check_handles_404():
+    """Verify that a 404 (ValueError) in check_exfil_repos is handled silently."""
+    from actionradius.inventory.repo_lister import check_exfil_repos
+    
+    client = MagicMock()
+    client._get.side_effect = [
+        [{"login": "member1"}], # /orgs/myorg/members
+        ValueError("Not found") # /repos/member1/tpcp-docs
+    ]
+    
+    with patch("builtins.print") as mock_print:
+        hits = check_exfil_repos(client, "myorg")
+        assert not mock_print.called
+        assert len(hits) == 0
