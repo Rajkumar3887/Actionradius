@@ -81,6 +81,7 @@ class Finding:
     severity: Literal["critical", "high", "medium", "low", "info"]
     score: float
     rationale: str                     # human-readable "why this severity"
+    is_typosquat: bool = False
 
     @property
     def is_compromised_version(self) -> bool:

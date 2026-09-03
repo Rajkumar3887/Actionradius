@@ -42,6 +42,7 @@ def _scan_workflows(
     findings: list[Finding],
     ioc_matches: list,
     attack_window: dict | None = None,
+    run_typosquat: bool = True,
 ):
     """Core scanning loop shared by single-target and feed modes."""
     for r in repos:
@@ -80,48 +81,50 @@ def _scan_workflows(
                             typer.secho(f"[IOC MATCH] {r.owner}/{r.name}:{wf.path}", fg=typer.colors.RED, err=True)
 
                 # Typosquat detection — runs on every scan, independent of target
-                for site in wf.uses_sites:
-                    squat = check_typosquat(site)
-                    if squat:
-                        typer.secho(
-                            f"[TYPOSQUAT] {r.owner}/{r.name}:{squat['workflow_path']} "
-                            f"uses '{squat['suspicious_action']}' — looks like '{squat['similar_to']}' "
-                            f"(edit distance: {squat['edit_distance']})",
-                            fg=typer.colors.RED, err=True
-                        )
-                        
-                        resolved = ResolvedRef(uses=site.uses, current_sha=None, is_mutable=True)
-                        score, severity, rationale = calculate_risk_score(
-                            is_mutable=True,
-                            compromise_status="UNKNOWN",
-                            is_orphan=False,
-                            trigger=wf.triggers,
-                            permissions=wf.permissions,
-                            secrets=wf.secrets,
-                            runs_on_self_hosted=wf.runs_on_self_hosted,
-                            is_typosquat=True
-                        )
-                        
-                        hist_exp = "UNKNOWN"
-                        if attack_window:
-                            from actionradius.context.historical import check_historical_exposure
-                            hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+                if run_typosquat:
+                    for site in wf.uses_sites:
+                        squat = check_typosquat(site)
+                        if squat:
+                            typer.secho(
+                                f"[TYPOSQUAT] {r.owner}/{r.name}:{squat['workflow_path']} "
+                                f"uses '{squat['suspicious_action']}' — looks like '{squat['similar_to']}' "
+                                f"(edit distance: {squat['edit_distance']})",
+                                fg=typer.colors.RED, err=True
+                            )
                             
-                        f = Finding(
-                            repo=r,
-                            uses_site=site,
-                            resolved=resolved,
-                            compromise_status="UNKNOWN",
-                            historical_exposure=hist_exp,
-                            pin_type=site.uses.ref_type,
-                            trigger=wf.triggers,
-                            permissions=wf.permissions,
-                            secrets=wf.secrets,
-                            severity=severity,
-                            score=score,
-                            rationale=rationale
-                        )
-                        findings.append(f)
+                            resolved = ResolvedRef(uses=site.uses, current_sha=None, is_mutable=True)
+                            score, severity, rationale = calculate_risk_score(
+                                is_mutable=True,
+                                compromise_status="UNKNOWN",
+                                is_orphan=False,
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                runs_on_self_hosted=wf.runs_on_self_hosted,
+                                is_typosquat=True
+                            )
+                            
+                            hist_exp = "UNKNOWN"
+                            if attack_window:
+                                from actionradius.context.historical import check_historical_exposure
+                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window, site.uses)
+                                
+                            f = Finding(
+                                repo=r,
+                                uses_site=site,
+                                resolved=resolved,
+                                compromise_status="UNKNOWN",
+                                historical_exposure=hist_exp,
+                                pin_type=site.uses.ref_type,
+                                trigger=wf.triggers,
+                                permissions=wf.permissions,
+                                secrets=wf.secrets,
+                                severity=severity,
+                                score=score,
+                                rationale=rationale,
+                                is_typosquat=True
+                            )
+                            findings.append(f)
 
                 if target:
                     for site in wf.uses_sites:
@@ -145,7 +148,7 @@ def _scan_workflows(
                             hist_exp = "UNKNOWN"
                             if attack_window:
                                 from actionradius.context.historical import check_historical_exposure
-                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window, site.uses)
 
                             f = Finding(
                                 repo=r,
@@ -193,7 +196,7 @@ def _scan_workflows(
                             hist_exp = "UNKNOWN"
                             if attack_window:
                                 from actionradius.context.historical import check_historical_exposure
-                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window)
+                                hist_exp = check_historical_exposure(client, r.owner, r.name, site.workflow_path, attack_window, site.uses)
 
                             f = Finding(
                                 repo=r,
@@ -294,7 +297,7 @@ def scan(
         feed = _load_feed(target_feed)
         typer.secho(f"Loaded {len(feed)} entries from feed: {target_feed}", fg=typer.colors.CYAN, err=True)
 
-        for entry in feed:
+        for i, entry in enumerate(feed):
             action = entry["action"]
             feed_bad_range = entry.get("bad_range")
             cve = entry.get("cve", "N/A")
@@ -310,6 +313,7 @@ def scan(
                 findings=findings,
                 ioc_matches=ioc_matches,
                 attack_window=entry.get("attack_window"),
+                run_typosquat=(i == 0),
             )
 
     # --- Single-target mode ---

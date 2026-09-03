@@ -12,7 +12,7 @@ def generate_sarif_report(findings: list[Finding], output_path: str):
         if f.severity not in ("critical", "high", "medium"):
             continue
             
-        rule_id = "ActionRadius-Typosquat" if "typosquat" in (f.rationale or "").lower() \
+        rule_id = "ActionRadius-Typosquat" if f.is_typosquat \
                   else "ActionRadius-CompromisedDependency"
             
         # SARIF uses its own severity levels
