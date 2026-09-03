@@ -19,7 +19,7 @@ class UsesRef:
     repo: Optional[str]
     path: Optional[str]                # subdir action or reusable workflow path
     ref: Optional[str]                           # "v45" | "main" | 40-char sha
-    ref_type: Literal["sha", "tag", "branch", "local", "unresolvable", "mutable_ref"]
+    ref_type: Literal["sha", "tag", "branch", "local", "unresolvable", "mutable_ref", "docker", "docker_digest"]
     is_reusable_workflow: bool
 
 @dataclass
