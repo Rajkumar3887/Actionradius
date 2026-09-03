@@ -56,3 +56,49 @@ def load_external_sarif(sarif_path: str) -> set[str]:
                     tainted_paths.add(normalized)
 
     return tainted_paths
+
+
+def load_external_sarif_repo_scoped(sarif_path: str) -> set[str] | None:
+    """
+    Parse a SARIF file looking for versionControlProvenance to map findings to owner/repo.
+    Returns a set of "owner/repo:path" strings.
+    If ANY result cannot be tied to a repo, returns None to avoid dangerous partial results.
+    """
+    with open(sarif_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    tainted_paths: set[str] = set()
+
+    for run in data.get("runs", []):
+        base_to_repo = {}
+        for prov in run.get("versionControlProvenance", []):
+            repo_uri = prov.get("repositoryUri", "")
+            if not repo_uri:
+                continue
+            
+            if repo_uri.endswith(".git"):
+                repo_uri = repo_uri[:-4]
+            parts = repo_uri.split("/")
+            if len(parts) >= 2:
+                owner_repo = f"{parts[-2]}/{parts[-1]}"
+                mapped_to = prov.get("mappedTo", {})
+                base_id = mapped_to.get("uriBaseId", "")
+                if base_id:
+                    base_to_repo[base_id] = owner_repo
+        
+        for result in run.get("results", []):
+            for location in result.get("locations", []):
+                physical = location.get("physicalLocation", {})
+                artifact = physical.get("artifactLocation", {})
+                uri = artifact.get("uri", "")
+                base_id = artifact.get("uriBaseId", "")
+                
+                if uri:
+                    if not base_id or base_id not in base_to_repo:
+                        return None
+                        
+                    owner_repo = base_to_repo[base_id]
+                    normalized = _normalize_workflow_path(uri)
+                    tainted_paths.add(f"{owner_repo}:{normalized}")
+
+    return tainted_paths

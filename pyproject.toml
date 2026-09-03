@@ -27,3 +27,6 @@ async = [
 
 [project.scripts]
 actionradius = "actionradius.cli:app"
+
+[tool.setuptools]
+packages = ["actionradius"]

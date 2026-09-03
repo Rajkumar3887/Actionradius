@@ -174,6 +174,65 @@ def test_cli_rejects_safe_ref_with_bad_range():
     assert "mutually exclusive" in result.output.lower() or "mutually exclusive" in (result.stderr or "").lower()
 
 
+def test_cli_rejects_bare_external_sarif_with_org(tmp_path):
+    """--external-sarif without repo provenance cannot be used with an org-wide scan."""
+    from typer.testing import CliRunner
+    from actionradius.cli import app
+    import json
+
+    sarif_file = tmp_path / "bare.sarif"
+    sarif_file.write_text(json.dumps({
+        "runs": [{
+            "results": [{"locations": [{"physicalLocation": {"artifactLocation": {"uri": "ci.yml"}}}]}]
+        }]
+    }))
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "scan",
+        "--target", "actions/checkout",
+        "--org", "myorg",
+        "--external-sarif", str(sarif_file)
+    ])
+
+    assert result.exit_code == 1
+    assert "only supported with --repo" in result.output.lower() or "only supported with --repo" in (result.stderr or "").lower()
+
+def test_cli_allows_scoped_external_sarif_with_org(tmp_path):
+    """--external-sarif WITH repo provenance is allowed with an org-wide scan."""
+    from typer.testing import CliRunner
+    from actionradius.cli import app
+    import json
+    from unittest.mock import patch
+
+    sarif_file = tmp_path / "scoped.sarif"
+    sarif_file.write_text(json.dumps({
+        "runs": [{
+            "versionControlProvenance": [{
+                "repositoryUri": "https://github.com/myorg/myrepo",
+                "mappedTo": {"uriBaseId": "SRCROOT"}
+            }],
+            "results": [{"locations": [{"physicalLocation": {"artifactLocation": {
+                "uri": "ci.yml", "uriBaseId": "SRCROOT"
+            }}}]}]
+        }]
+    }))
+
+    runner = CliRunner()
+    with patch("actionradius.cli.GitHubClient") as mock_client:
+        with patch("actionradius.cli.get_org_repos") as mock_get_org_repos:
+            mock_get_org_repos.return_value = []
+            result = runner.invoke(app, [
+                "scan",
+                "--target", "actions/checkout",
+                "--org", "myorg",
+                "--external-sarif", str(sarif_file)
+            ])
+
+    assert result.exit_code == 0
+    assert "loaded 1 tainted workflow paths from repo-scoped sarif" in result.output.lower() or "loaded 1 tainted workflow paths from repo-scoped sarif" in (result.stderr or "").lower()
+
+
 # --- Test: determine_compromise_status unifies both modes ---
 
 def test_determine_status_uses_bad_range_when_provided():

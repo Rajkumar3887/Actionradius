@@ -8,13 +8,12 @@ async def _fetch_one(client, repo: RepoRef, semaphore: asyncio.Semaphore) -> tup
     """Fetch workflows for a single repo under semaphore."""
     from actionradius.inventory.async_tree_fetcher import fetch_workflow_contents_async
 
-    async with semaphore:
-        try:
-            files = await fetch_workflow_contents_async(client, repo.owner, repo.name, repo.default_branch)
-            return (repo, files)
-        except Exception as e:
-            print(f"  WARNING: async fetch failed for {repo.owner}/{repo.name}: {e}")
-            return (repo, None)
+    try:
+        files = await fetch_workflow_contents_async(client, repo.owner, repo.name, repo.default_branch, semaphore)
+        return (repo, files)
+    except Exception as e:
+        print(f"  WARNING: async fetch failed for {repo.owner}/{repo.name}: {e}")
+        return (repo, None)
 
 
 async def _prefetch(token: str | None, repos: list[RepoRef], concurrency: int) -> dict:

@@ -33,6 +33,13 @@ def _load_feed(feed_path: str) -> list[dict]:
     return data
 
 
+def _is_externally_tainted(repo, wf, scoped: set | None, bare: set | None) -> bool:
+    if scoped is not None:
+        return f"{repo.owner}/{repo.name}:{wf.path}" in scoped
+    if bare is not None:
+        return wf.path in bare
+    return False
+
 def _scan_workflows(
     client: GitHubClient,
     repos: list,
@@ -44,8 +51,10 @@ def _scan_workflows(
     ioc_matches: list,
     attack_window: dict | None = None,
     run_typosquat: bool = True,
-    external_findings: set | None = None,
+    external_findings_scoped: set | None = None,
+    external_findings_bare: set | None = None,
     prefetched_files: dict | None = None,
+
 ):
     """Core scanning loop shared by single-target and feed modes."""
     for r in repos:
@@ -109,7 +118,7 @@ def _scan_workflows(
                                 secrets=wf.secrets,
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
                                 is_typosquat=True,
-                                has_external_finding=(external_findings is not None and wf.path in external_findings),
+                                has_external_finding=_is_externally_tainted(r, wf, external_findings_scoped, external_findings_bare),
                             )
                             
                             hist_exp = "UNKNOWN"
@@ -152,7 +161,7 @@ def _scan_workflows(
                                 secrets=wf.secrets,
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
                                 is_docker_mutable=True,
-                                has_external_finding=(external_findings is not None and wf.path in external_findings),
+                                has_external_finding=_is_externally_tainted(r, wf, external_findings_scoped, external_findings_bare),
                             )
                             hist_exp = "UNKNOWN"
                             if attack_window:
@@ -205,7 +214,7 @@ def _scan_workflows(
                                 secrets=wf.secrets,
                                 runs_on_self_hosted=wf.runs_on_self_hosted,
                                 is_unverified_publisher=(publisher_trust == "new_org"),
-                                has_external_finding=(external_findings is not None and wf.path in external_findings),
+                                has_external_finding=_is_externally_tainted(r, wf, external_findings_scoped, external_findings_bare),
                             )
 
                             hist_exp = "UNKNOWN"
@@ -269,6 +278,8 @@ def scan(
         typer.secho("Error: Must provide --org or --repo", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
+
+
     # --safe-ref and --bad-from/--bad-to are mutually exclusive
     if safe_refs and (bad_from or bad_to):
         typer.secho("Error: --safe-ref and --bad-from/--bad-to are mutually exclusive. Use one matching mode.", fg=typer.colors.RED, err=True)
@@ -306,11 +317,21 @@ def scan(
         owner, name = repo.split("/", 1)
         repos = [get_repo(client, owner, name)]
 
-    external_findings = None
+    external_findings_scoped = None
+    external_findings_bare = None
     if external_sarif:
-        from actionradius.context.external_findings import load_external_sarif
-        external_findings = load_external_sarif(external_sarif)
-        typer.secho(f"Loaded {len(external_findings)} tainted workflow paths from external SARIF.", fg=typer.colors.CYAN, err=True)
+        from actionradius.context.external_findings import load_external_sarif, load_external_sarif_repo_scoped
+        external_findings_scoped = load_external_sarif_repo_scoped(external_sarif)
+        
+        if external_findings_scoped is not None:
+            typer.secho(f"Loaded {len(external_findings_scoped)} tainted workflow paths from repo-scoped SARIF.", fg=typer.colors.CYAN, err=True)
+        else:
+            if org and not repo:
+                typer.secho("Error: --external-sarif is only supported with --repo (single-repo scans) when the SARIF lacks repo provenance. Org-wide SARIF ingestion requires repo-scoped paths.", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=1)
+                
+            external_findings_bare = load_external_sarif(external_sarif)
+            typer.secho(f"Loaded {len(external_findings_bare)} tainted workflow paths from bare SARIF.", fg=typer.colors.CYAN, err=True)
 
     prefetched_files = None
     if concurrent:
@@ -347,7 +368,8 @@ def scan(
                 ioc_matches=ioc_matches,
                 attack_window=entry.get("attack_window"),
                 run_typosquat=(i == 0),
-                external_findings=external_findings,
+                external_findings_scoped=external_findings_scoped,
+                external_findings_bare=external_findings_bare,
                 prefetched_files=prefetched_files,
             )
 
@@ -367,7 +389,8 @@ def scan(
             findings=findings,
             ioc_matches=ioc_matches,
             attack_window=None,
-            external_findings=external_findings,
+            external_findings_scoped=external_findings_scoped,
+            external_findings_bare=external_findings_bare,
             prefetched_files=prefetched_files,
         )
 

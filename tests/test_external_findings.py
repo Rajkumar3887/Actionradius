@@ -114,3 +114,98 @@ def test_load_external_sarif_empty_results():
         path = _write_sarif(tmp, sarif)
         result = load_external_sarif(path)
     assert len(result) == 0
+
+from actionradius.context.external_findings import load_external_sarif_repo_scoped
+
+def test_load_external_sarif_repo_scoped_success():
+    sarif = {
+        "runs": [{
+            "versionControlProvenance": [{
+                "repositoryUri": "https://github.com/myorg/myrepo",
+                "mappedTo": {"uriBaseId": "SRCROOT"}
+            }],
+            "results": [{
+                "locations": [{"physicalLocation": {"artifactLocation": {
+                    "uri": ".github/workflows/ci.yml",
+                    "uriBaseId": "SRCROOT"
+                }}}]
+            }]
+        }]
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write_sarif(tmp, sarif)
+        res = load_external_sarif_repo_scoped(path)
+    assert res is not None
+    assert "myorg/myrepo:.github/workflows/ci.yml" in res
+
+
+def test_load_external_sarif_repo_scoped_with_git_suffix():
+    sarif = {
+        "runs": [{
+            "versionControlProvenance": [{
+                "repositoryUri": "https://github.com/myorg/myrepo.git",
+                "mappedTo": {"uriBaseId": "SRCROOT"}
+            }],
+            "results": [{
+                "locations": [{"physicalLocation": {"artifactLocation": {
+                    "uri": "deploy.yml",
+                    "uriBaseId": "SRCROOT"
+                }}}]
+            }]
+        }]
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write_sarif(tmp, sarif)
+        res = load_external_sarif_repo_scoped(path)
+    assert res is not None
+    assert "myorg/myrepo:.github/workflows/deploy.yml" in res
+
+
+def test_load_external_sarif_repo_scoped_no_mapped_to():
+    sarif = {
+        "runs": [{
+            "versionControlProvenance": [{
+                "repositoryUri": "https://github.com/myorg/myrepo"
+            }],
+            "results": [{
+                "locations": [{"physicalLocation": {"artifactLocation": {
+                    "uri": ".github/workflows/ci.yml"
+                }}}]
+            }]
+        }]
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write_sarif(tmp, sarif)
+        res = load_external_sarif_repo_scoped(path)
+    # Should bail because the result doesn't have a uriBaseId mapping
+    assert res is None
+
+
+def test_load_external_sarif_repo_scoped_partial_failure_bails():
+    sarif = {
+        "runs": [{
+            "versionControlProvenance": [{
+                "repositoryUri": "https://github.com/myorg/myrepo",
+                "mappedTo": {"uriBaseId": "SRCROOT"}
+            }],
+            "results": [
+                {
+                    "locations": [{"physicalLocation": {"artifactLocation": {
+                        "uri": ".github/workflows/ci.yml",
+                        "uriBaseId": "SRCROOT"
+                    }}}]
+                },
+                {
+                    "locations": [{"physicalLocation": {"artifactLocation": {
+                        "uri": ".github/workflows/deploy.yml"
+                        # missing uriBaseId
+                    }}}]
+                }
+            ]
+        }]
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write_sarif(tmp, sarif)
+        res = load_external_sarif_repo_scoped(path)
+    # The whole thing should return None if even one result can't be tied
+    assert res is None
