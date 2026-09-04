@@ -54,7 +54,7 @@ def _scan_workflows(
     external_findings_scoped: set | None = None,
     external_findings_bare: set | None = None,
     prefetched_files: dict | None = None,
-
+    seen_docker: set | None = None,
 ):
     """Core scanning loop shared by single-target and feed modes."""
     for r in repos:
@@ -145,8 +145,13 @@ def _scan_workflows(
 
                 if target:
                     for site in wf.uses_sites:
-                        # Docker mutable-tag detection — runs on every target scan, independent of target
                         if site.uses.ref_type == "docker":
+                            docker_key = (r.owner, r.name, site.workflow_path, site.uses.raw)
+                            if seen_docker is not None:
+                                if docker_key in seen_docker:
+                                    continue
+                                seen_docker.add(docker_key)
+
                             resolved = ResolvedRef(
                                 uses=site.uses,
                                 current_sha=None,
@@ -234,7 +239,8 @@ def _scan_workflows(
                                 secrets=wf.secrets,
                                 severity=severity,
                                 score=score,
-                                rationale=rationale
+                                rationale=rationale,
+                                publisher_trust=publisher_trust,
                             )
                             findings.append(f)
         except Exception as e:
@@ -345,6 +351,7 @@ def scan(
 
     findings: list[Finding] = []
     ioc_matches = []
+    seen_docker = set()
 
     # --- Feed mode: iterate over every entry in the curated JSON ---
     if target_feed:
@@ -371,6 +378,7 @@ def scan(
                 external_findings_scoped=external_findings_scoped,
                 external_findings_bare=external_findings_bare,
                 prefetched_files=prefetched_files,
+                seen_docker=seen_docker,
             )
 
     # --- Single-target mode ---
@@ -392,6 +400,7 @@ def scan(
             external_findings_scoped=external_findings_scoped,
             external_findings_bare=external_findings_bare,
             prefetched_files=prefetched_files,
+            seen_docker=seen_docker,
         )
 
     # --- IOC results ---

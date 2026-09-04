@@ -28,5 +28,5 @@ async = [
 [project.scripts]
 actionradius = "actionradius.cli:app"
 
-[tool.setuptools]
-packages = ["actionradius"]
+[tool.setuptools.packages.find]
+where = ["."]

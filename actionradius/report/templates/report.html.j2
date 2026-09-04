@@ -26,6 +26,7 @@ body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1
   <p><strong>Action:</strong> {{ f.uses_site.uses.raw }}</p>
   <p><strong>Resolved SHA:</strong> <code>{{ f.resolved.current_sha or "unresolved" }}</code></p>
   <p class="detail"><strong>Pin type:</strong> {{ f.pin_type }} | <strong>Historical exposure:</strong> {{ f.historical_exposure }}</p>
+  <p class="detail"><strong>Publisher trust:</strong> {{ f.publisher_trust }}</p>
   <p><strong>Rationale:</strong> {{ f.rationale }}</p>
 </div>
 {% else %}
@@ -39,6 +40,7 @@ body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1
   <p><strong>Action:</strong> {{ f.uses_site.uses.raw }}</p>
   <p><strong>Resolved SHA:</strong> <code>{{ f.resolved.current_sha or "unresolved" }}</code></p>
   <p class="detail"><strong>Pin type:</strong> {{ f.pin_type }} | <strong>Historical exposure:</strong> {{ f.historical_exposure }}</p>
+  <p class="detail"><strong>Publisher trust:</strong> {{ f.publisher_trust }}</p>
   <p><strong>Rationale:</strong> {{ f.rationale }}</p>
 </div>
 {% else %}
@@ -52,6 +54,7 @@ body { font-family: -apple-system, sans-serif; background: #0d1117; color: #c9d1
   <p><strong>Action:</strong> {{ f.uses_site.uses.raw }}</p>
   <p><strong>Resolved SHA:</strong> <code>{{ f.resolved.current_sha or "unresolved" }}</code></p>
   <p class="detail"><strong>Pin type:</strong> {{ f.pin_type }}</p>
+  <p class="detail"><strong>Publisher trust:</strong> {{ f.publisher_trust }}</p>
 </div>
 {% else %}
 <p>No safe sites found.</p>

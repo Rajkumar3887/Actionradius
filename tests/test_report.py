@@ -52,6 +52,7 @@ def _create_sample_finding() -> Finding:
         severity="medium",
         score=4.0,
         rationale="Test rationale",
+        publisher_trust="established",
     )
 
 
@@ -65,6 +66,7 @@ def test_json_report_writes_valid_json():
         assert isinstance(data, list)
         assert len(data) == 1
         assert data[0]["repo"]["owner"] == "test-org"
+        assert data[0]["publisher_trust"] == "established"
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

@@ -37,6 +37,16 @@ def resolve_mutable_ref(client: GitHubClient, uses: UsesRef) -> ResolvedRef:
         data = client._get(f"/repos/{uses.owner}/{uses.repo}/git/ref/tags/{uses.ref}")
         if "object" in data and "sha" in data["object"]:
             sha = data["object"]["sha"]
+            
+            if data["object"].get("type") == "tag":
+                # Dereference the annotated tag to get the commit SHA
+                try:
+                    tag_data = client._get(f"/repos/{uses.owner}/{uses.repo}/git/tags/{sha}")
+                    if "object" in tag_data and "sha" in tag_data["object"]:
+                        sha = tag_data["object"]["sha"]
+                except Exception:
+                    pass # Keep the original sha if dereferencing fails
+
             _RESOLUTION_CACHE[cache_key] = sha
             return ResolvedRef(uses=uses, current_sha=sha, is_mutable=is_mutable)
     except ValueError:
