@@ -20,8 +20,22 @@ class GitHubClient:
         # forever with no feedback; mirror the async client's 30s timeout.
         response = self.session.get(url, params=params, timeout=30.0)
 
-        self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
-        self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", 0))
+        # Only update tracked rate-limit state when the header is present and
+        # parseable — an absent/malformed header must not clobber a previous
+        # good reading with a sentinel like -1.
+        remaining_header = response.headers.get("X-RateLimit-Remaining")
+        if remaining_header is not None:
+            try:
+                self.rate_limit_remaining = int(remaining_header)
+            except (TypeError, ValueError):
+                pass
+
+        reset_header = response.headers.get("X-RateLimit-Reset")
+        if reset_header is not None:
+            try:
+                self.rate_limit_reset = int(reset_header)
+            except (TypeError, ValueError):
+                pass
 
         if response.status_code == 403:
             if _attempt >= MAX_RETRIES:
@@ -40,6 +54,20 @@ class GitHubClient:
                 print(f"  WARNING: Primary rate limit hit. Sleeping {sleep_sec}s until {reset_time}...")
                 time.sleep(sleep_sec)
                 return self._get(path, params, _attempt=_attempt + 1)
+
+        if response.status_code in (500, 502, 503, 504):
+            # Transient server-side errors — not rate-limit related. Retry
+            # with a short exponential backoff before giving up; a single
+            # blip on GitHub's side shouldn't sink an otherwise-healthy scan.
+            if _attempt >= MAX_RETRIES:
+                response.raise_for_status()
+
+            import time
+            backoff = 2 ** _attempt
+            print(f"  WARNING: GitHub API returned {response.status_code}. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            return self._get(path, params, _attempt=_attempt + 1)
+
         if response.status_code == 404:
             raise ValueError(f"Not found: {url} (repo/path doesn't exist or is private)")
         response.raise_for_status()

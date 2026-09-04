@@ -196,6 +196,17 @@ class AsyncGitHubClient:
                 await asyncio.sleep(sleep_sec)
                 return await self._get(path, params, _attempt=_attempt + 1)
 
+        if response.status_code in (500, 502, 503, 504):
+            # Transient server-side errors — retry with short exponential
+            # backoff before giving up, mirroring the sync client.
+            if _attempt >= MAX_RETRIES:
+                response.raise_for_status()
+
+            backoff = 2 ** _attempt
+            print(f"  WARNING: GitHub API returned {response.status_code}. Retrying in {backoff}s...")
+            await asyncio.sleep(backoff)
+            return await self._get(path, params, _attempt=_attempt + 1)
+
         if response.status_code == 404:
             raise ValueError(f"Not found: {path}")
         response.raise_for_status()
