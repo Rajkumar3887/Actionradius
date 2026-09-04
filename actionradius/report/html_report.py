@@ -1,5 +1,5 @@
 import os
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from actionradius.models import Finding
 
 def generate_html_report(findings: list[Finding], output_path: str, target: str):
@@ -11,7 +11,16 @@ def generate_html_report(findings: list[Finding], output_path: str, target: str)
     unknown_findings = [f for f in findings if f.compromise_status == "UNKNOWN"]
     safe_findings = [f for f in findings if f.compromise_status == "SAFE"]
 
-    env = Environment(loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), "templates")))
+    # autoescape is required here: several rendered fields (the raw `uses:`
+    # string, workflow paths, repo owner/name, rationale text) originate from
+    # YAML content in third-party/attacker-controlled repositories. Without
+    # HTML-escaping, a workflow crafted with e.g. `uses: <script>...` or a
+    # repo named to include markup would execute when a triager opens the
+    # generated report in a browser (stored XSS via the scan target itself).
+    env = Environment(
+        loader=FileSystemLoader(os.path.join(os.path.dirname(__file__), "templates")),
+        autoescape=select_autoescape(["html", "j2"]),
+    )
     template = env.get_template("report.html.j2")
 
     html_content = template.render(

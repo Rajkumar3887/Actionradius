@@ -16,7 +16,9 @@ class GitHubClient:
     def _get(self, path: str, params: dict | None = None, _attempt: int = 0) -> dict:
         MAX_RETRIES = 3
         url = f"{self.base_url}{path}"
-        response = self.session.get(url, params=params)
+        # A hang here (DNS/connect/read stall) would otherwise block the CLI
+        # forever with no feedback; mirror the async client's 30s timeout.
+        response = self.session.get(url, params=params, timeout=30.0)
 
         self.rate_limit_remaining = int(response.headers.get("X-RateLimit-Remaining", -1))
         self.rate_limit_reset = int(response.headers.get("X-RateLimit-Reset", 0))

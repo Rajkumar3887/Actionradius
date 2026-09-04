@@ -315,6 +315,28 @@ def scan(
         if not target and not ioc_search and not target_feed:
             return  # --check-exfil was the only action requested
 
+    # --external-sarif validation happens before any repo fetching. Bare
+    # (non-repo-scoped) SARIF combined with --org is rejected outright, and
+    # since parsing/validating the SARIF file is purely local (no network),
+    # doing this first avoids an org-wide repo listing call (a real,
+    # rate-limit-consuming GitHub API request) that would just get thrown
+    # away when the command is about to fail validation anyway.
+    external_findings_scoped = None
+    external_findings_bare = None
+    if external_sarif:
+        from actionradius.context.external_findings import load_external_sarif, load_external_sarif_repo_scoped
+        external_findings_scoped = load_external_sarif_repo_scoped(external_sarif)
+
+        if external_findings_scoped is not None:
+            typer.secho(f"Loaded {len(external_findings_scoped)} tainted workflow paths from repo-scoped SARIF.", fg=typer.colors.CYAN, err=True)
+        else:
+            if org and not repo:
+                typer.secho("Error: --external-sarif is only supported with --repo (single-repo scans) when the SARIF lacks repo provenance. Org-wide SARIF ingestion requires repo-scoped paths.", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=1)
+
+            external_findings_bare = load_external_sarif(external_sarif)
+            typer.secho(f"Loaded {len(external_findings_bare)} tainted workflow paths from bare SARIF.", fg=typer.colors.CYAN, err=True)
+
     repos = []
     if org:
         typer.secho(f"Fetching repos for org: {org}...", fg=typer.colors.CYAN, err=True)
@@ -322,22 +344,6 @@ def scan(
     elif repo:
         owner, name = repo.split("/", 1)
         repos = [get_repo(client, owner, name)]
-
-    external_findings_scoped = None
-    external_findings_bare = None
-    if external_sarif:
-        from actionradius.context.external_findings import load_external_sarif, load_external_sarif_repo_scoped
-        external_findings_scoped = load_external_sarif_repo_scoped(external_sarif)
-        
-        if external_findings_scoped is not None:
-            typer.secho(f"Loaded {len(external_findings_scoped)} tainted workflow paths from repo-scoped SARIF.", fg=typer.colors.CYAN, err=True)
-        else:
-            if org and not repo:
-                typer.secho("Error: --external-sarif is only supported with --repo (single-repo scans) when the SARIF lacks repo provenance. Org-wide SARIF ingestion requires repo-scoped paths.", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=1)
-                
-            external_findings_bare = load_external_sarif(external_sarif)
-            typer.secho(f"Loaded {len(external_findings_bare)} tainted workflow paths from bare SARIF.", fg=typer.colors.CYAN, err=True)
 
     prefetched_files = None
     if concurrent:
