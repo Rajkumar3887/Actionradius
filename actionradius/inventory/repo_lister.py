@@ -10,11 +10,17 @@ def get_org_repos(client: GitHubClient, org: str, include_forks: bool = False, i
     page = 1
     endpoint = f"/orgs/{org}/repos"
     
-    # Try org first, fallback to user if 404
+    # Try org first, fallback to user if 404. Any other failure here (rate
+    # limit, transient network error, unexpected response) shouldn't crash
+    # the whole scan over what's just a disambiguation probe — the real
+    # paginated call right below will surface a clear error of its own if
+    # the chosen endpoint genuinely doesn't work.
     try:
         client._get(endpoint, params={"per_page": 1})
     except ValueError:
         endpoint = f"/users/{org}/repos"
+    except Exception as e:
+        print(f"  WARNING: org/user probe for '{org}' failed ({e}); assuming org endpoint")
 
     while True:
         batch = client._get(endpoint, params={"per_page": 100, "page": page})
@@ -70,8 +76,13 @@ def check_exfil_repos(client: GitHubClient, org: str) -> list[str]:
             if len(chunk) < 100:
                 break
             page += 1
-    except Exception:
-        # Fallback: try checking the org itself
+    except Exception as e:
+        # Fallback: try checking the org itself. This is a real coverage
+        # reduction (only 1 account gets checked instead of every member),
+        # so it must be surfaced — silently returning fewer hits than a
+        # healthy run would otherwise be indistinguishable from "no exfil
+        # found" when it's actually "we couldn't check most accounts."
+        print(f"  WARNING: couldn't list members for org '{org}' ({e}); falling back to checking the org account only — exfil-check coverage is incomplete")
         members = [{"login": org}]
 
     for m in members:

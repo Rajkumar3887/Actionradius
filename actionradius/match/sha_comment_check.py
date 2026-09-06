@@ -79,11 +79,36 @@ def detect_sha_comment_mismatches(
 
 
 def _resolve_tag_sha(client: GitHubClient, owner: str, repo: str, tag: str) -> str | None:
-    """Resolve a tag name to its SHA via the Git Refs API."""
+    """
+    Resolve a tag name to the commit SHA it actually points to, via the Git
+    Refs API.
+
+    Annotated tags are dereferenced to their target commit (mirroring
+    resolve/ref_resolver.py's handling) — a lightweight tag's ref object
+    already points straight at a commit, but an annotated tag's ref object
+    points at a separate tag object whose own `sha` is *not* a commit SHA.
+    Comparing that tag-object SHA against a `uses:` pin (which must always
+    be a commit Sha per GitHub Actions' own pinning requirements) would
+    produce a false "mismatch" for every annotated tag, regardless of
+    whether the pin is actually correct — undermining the one check this
+    module exists to run.
+    """
     try:
         data = client._get(f"/repos/{owner}/{repo}/git/ref/tags/{tag}")
-        if "object" in data and "sha" in data["object"]:
-            return data["object"]["sha"]
+        obj = data.get("object")
+        if not obj or "sha" not in obj:
+            return None
+
+        sha = obj["sha"]
+        if obj.get("type") == "tag":
+            try:
+                tag_data = client._get(f"/repos/{owner}/{repo}/git/tags/{sha}")
+                tag_obj = tag_data.get("object")
+                if tag_obj and "sha" in tag_obj:
+                    sha = tag_obj["sha"]
+            except Exception:
+                pass  # Keep the tag-object SHA if dereferencing fails
+        return sha
     except Exception:
         pass
     return None
