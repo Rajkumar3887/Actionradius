@@ -6,7 +6,18 @@ PublisherTrust = str  # "verified" | "established" | "new_org" | "unknown"
 NEW_ORG_DAYS = 90
 LOW_STAR_THRESHOLD = 10
 
-# Process-lifetime cache keyed by (owner, repo)
+# Process-lifetime cache keyed by (owner, repo). Never expires within a run.
+#
+# Same design assumption as resolve/ref_resolver.py's _RESOLUTION_CACHE: a
+# publisher's trust signals (org age, star count, etc.) can't meaningfully
+# change within the lifetime of one short-lived CLI scan, so caching for
+# the process's duration is a pure win. This only becomes a liability if
+# ActionRadius is ever run as a long-lived process across scans separated
+# by real time — not the case today. See ref_resolver.py for the fuller
+# writeup; this is the same tradeoff, made twice independently rather than
+# through shared cache infrastructure, since the two caches have different
+# keys and lifetimes-of-interest and a shared abstraction isn't obviously
+# worth the indirection for two small dicts.
 _TRUST_CACHE: dict[tuple[str, str], PublisherTrust] = {}
 
 

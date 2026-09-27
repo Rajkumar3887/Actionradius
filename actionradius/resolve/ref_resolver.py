@@ -2,6 +2,22 @@ from typing import Optional
 from actionradius.github_client import GitHubClient
 from actionradius.models import UsesRef, ResolvedRef
 
+# Process-lifetime cache, keyed by (owner, repo, ref). Intentionally never
+# expires or gets invalidated within a run.
+#
+# Design assumption: ActionRadius is a short-lived CLI process — one `scan`
+# invocation resolves each ref at most once, at effectively a single point
+# in time, so a mutable ref (a tag/branch) can't meaningfully change out
+# from under a scan while it's running. Caching within that window is a
+# pure win (fewer GitHub API calls, no correctness cost).
+#
+# This assumption breaks if ActionRadius is ever run as a long-lived
+# process reused across scans separated by real wall-clock time (e.g. a
+# daemon/server mode) — a tag re-pointed between two such scans would
+# still resolve to its first-seen (now stale) SHA for the rest of the
+# process's life. There's no such mode today, so no TTL/invalidation logic
+# has been added speculatively; if one is built, this cache is the first
+# thing to revisit.
 _RESOLUTION_CACHE = {}
 
 def resolve_mutable_ref(client: GitHubClient, uses: UsesRef) -> ResolvedRef:
