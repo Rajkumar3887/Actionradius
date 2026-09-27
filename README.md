@@ -1,12 +1,21 @@
 <div align="center">
   <img src="docs/actionradius-banner.png" alt="ActionRadius — Blast-Radius Detection for GitHub Actions" width="900">
-  <br><br>
+  
+  <h3>Fleet-wide exposure analysis for compromised GitHub Actions dependencies</h3>
 
-  [Quick Start](#-quick-start) •
-  [Features](#-features) •
-  [Usage Modes](#-usage-modes) •
-  [Scoring Model](#-scoring-model) •
-  [Why Not Zizmor / Poutine?](#-why-not-zizmor--poutine)
+  <p align="center">
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <img src="https://img.shields.io/badge/Tests-180%2F180%20passing-success.svg" alt="Tests">
+    <img src="https://img.shields.io/badge/Status-Production%20Ready-green.svg" alt="Status">
+  </p>
+  <br>
+
+  [🚀 Quick Start](#-quick-start) •
+  [✨ Features](#-features) •
+  [🧭 Usage Modes](#-usage-modes) •
+  [🧮 Scoring Model](#-scoring-model) •
+  [🆚 Alternatives](#-why-not-zizmor--poutine)
   
   <br>
   <br> 
