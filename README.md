@@ -20,10 +20,6 @@
   <br>
   <br> 
   
-  Answer "which of my repos are actually exposed right now?" in minutes, not days.
-</div>
-<br> 
-
 ## 🧨 The Problem
 
 On March 19, 2026, attackers hijacked **75 of 76 version tags** on `aquasecurity/trivy-action` — a security scanner used in thousands of CI pipelines — and used it to steal cloud credentials from downstream workflows. They also swapped a SHA pin in Trivy's own release workflow to point at an **orphan commit** in `actions/checkout`, leaving the `# v6.0.2` comment intact so reviewers wouldn't notice.
